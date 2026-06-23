@@ -1,0 +1,4 @@
+File automatically created from SVN or Git repository.
+
+URL: https://github.com/Piwigo/piwigo-two_factor 
+Revision: e85863d4cfa894076d529c971eade1e050fb4bd0 (Wed Jan 7 10:50:43 2026 +0100)
