@@ -305,10 +305,14 @@ Implemented in Phase 1 MVP:
 
 Still open after Phase 1 MVP:
 
-- automated PHPUnit coverage
-- automated Cypress or browser E2E coverage
 - separate SMS profile metadata storage
 - reusable PLG-facing helper API
+
+Implemented test coverage so far:
+
+- plugin-local PHPUnit harness covers SMS helper behavior for normalization, masking, config accessors, message generation, rate limiting, fail-closed config handling, and config normalization.
+- Cypress UI coverage exists in the parent Piwigo test harness for profile-page SMS setup validation and successful progression to code entry.
+- broader end-to-end coverage for live login verification, resend, lockout, and provider-integrated flows is still pending.
 
 ---
 
@@ -325,29 +329,44 @@ Still open after Phase 1 MVP:
 
 ## PHPUnit Test Plan
 
-1. Phone normalization accepts Slovak local and E.164 numbers.
+Implemented now:
+
+1. Phone normalization accepts formatted E.164 and `00`-prefixed inputs.
 2. Phone normalization rejects malformed values.
-3. SMS payload builder creates valid SMSTOOLS JSON.
-4. API key is never returned in public config/status.
-5. Rate limit blocks immediate repeated send.
-6. Correct OTP verifies within TTL.
-7. OTP fails after TTL.
-8. Wrong OTP decrements attempts.
-9. Provider `id != OK` returns safe error.
-10. Setup finalization enables `sms` only after correct code.
-11. Deactivation removes SMS method and leaves other methods untouched.
+3. SMS config accessors enforce expected bounds.
+4. SMS message generation reflects purpose, code, gallery title, and TTL.
+5. Rate limiting reports remaining wait time and resets after the window.
+6. Incomplete SMS configuration fails closed.
+7. Config normalization restores SMS defaults.
+
+Still pending:
+
+8. API key is never returned in public config/status.
+9. Correct OTP verifies within TTL.
+10. OTP fails after TTL.
+11. Wrong OTP decrements attempts.
+12. Provider `id != OK` returns safe error.
+13. Setup finalization enables `sms` only after correct code.
+14. Deactivation removes SMS method and leaves other methods untouched.
 
 ---
 
 ## Cypress / E2E Acceptance Scenarios
 
-1. Owner enables SMS 2FA from profile with valid phone and OTP.
-2. Owner cannot enable SMS 2FA with invalid phone.
-3. Owner logs in and completes SMS challenge.
-4. Wrong SMS code shows an error and eventually triggers lockout.
-5. Resend button is rate-limited.
-6. Non-owner cannot trigger SMS for another user.
-7. Admin can see whether SMS 2FA is enabled without seeing the full phone number.
+Implemented now in the parent Piwigo Cypress harness:
+
+1. Owner sees a validation error when SMS phone confirmation does not match.
+2. Owner advances from SMS setup send to code entry after a successful webservice response.
+
+Still pending:
+
+3. Owner enables SMS 2FA from profile with valid phone and OTP against the real backend flow.
+4. Owner cannot enable SMS 2FA with an invalid phone number via live backend validation.
+5. Owner logs in and completes SMS challenge.
+6. Wrong SMS code shows an error and eventually triggers lockout.
+7. Resend button is rate-limited.
+8. Non-owner cannot trigger SMS for another user.
+9. Admin can see whether SMS 2FA is enabled without seeing the full phone number.
 
 ---
 
@@ -364,4 +383,6 @@ Still open after Phase 1 MVP:
 
 Phase 1 MVP outcome:
 
-- All items above are implemented except the automated test coverage, which remains pending.
+- All runtime MVP features are implemented.
+- Initial automated PHPUnit and Cypress coverage is now in place.
+- Full test-plan completion remains pending for login, lockout, resend, deactivation, and provider-integrated scenarios.

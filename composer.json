@@ -1,0 +1,12 @@
+{
+  "name": "kontentwave/piwigo-two-factor-sms",
+  "description": "Two Factor plugin test harness for SMS OTP support",
+  "type": "piwigo-plugin",
+  "scripts": {
+    "test": "vendor/bin/phpunit"
+  },
+  "require": {},
+  "require-dev": {
+    "phpunit/phpunit": "^11.5"
+  }
+}
