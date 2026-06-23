@@ -53,6 +53,30 @@ function tf_add_methods($arr)
     )
   );
 
+  $service->addMethod(
+    'twofactor.setup.sms',
+    'tf_setup_sms',
+    array(
+      'phone_number' => array(
+        'flags' => WS_PARAM_OPTIONAL,
+        'info' => 'Phone number to verify'
+      ),
+      'code' => array(
+        'flags' => WS_PARAM_OPTIONAL,
+        'type' => WS_TYPE_POSITIVE,
+        'info' => 'SMS code'
+      ),
+      'pwg_token' => array(),
+    ),
+    'Step 1: send SMS / Step 2: confirm SMS code',
+    null,
+    array(
+      'hidden' => false,
+      'post_only' => true,
+      'admin_only' => false,
+    )
+  );
+
   // Others method
   $service->addMethod(
     'twofactor.status',
@@ -108,11 +132,26 @@ function tf_add_methods($arr)
   );
 
   $service->addMethod(
+    'twofactor.sendSms',
+    'tf_send_sms',
+    array(
+      'pwg_token' => array(),
+    ),
+    '',
+    null,
+    array(
+      'hidden' => false,
+      'post_only' => true,
+      'admin_only' => false,
+    )
+  );
+
+  $service->addMethod(
     'twofactor.deactivate',
     'tf_deactivate',
     array(
       'two_factor_method' => array(
-        'info' => 'Only email or external_app'
+        'info' => 'Only email, sms or external_app'
       ),
       'pwg_token' => array(),
     ),
@@ -166,9 +205,9 @@ function tf_setup_generic($params, $method)
     return new PwgError(403, 'Invalid security token');
   }
 
-  if (!preg_match('/(email|external_app)/', $method))
+  if (!preg_match('/(email|sms|external_app)/', $method))
   {
-    return new PwgError(401, 'Method can be only email or external_app');
+    return new PwgError(401, 'Method can be only email, sms or external_app');
   }
 
   $tf = new PwgTwoFactor($method);
@@ -190,7 +229,7 @@ function tf_setup_generic($params, $method)
   $setup = $tf->setup();
   if (!$setup)
   {
-    return new PwgError(401, 'Error during initialisation two factor for method:' . $method);
+    return new PwgError(401, $tf->getLastError() ?: 'Error during initialisation two factor for method:' . $method);
   }
 
   // logger
@@ -244,6 +283,51 @@ function tf_setup_external_app($params)
 }
 
 /**
+ * `Two Factor` : Setup SMS
+ */
+function tf_setup_sms($params)
+{
+  global $user;
+
+  if (!PwgTwoFactor::isActivated('sms'))
+  {
+    return new PwgError(401, 'Unable to activate 2FA by SMS');
+  }
+
+  if (isset($params['code']))
+  {
+    return tf_setup_generic($params, 'sms');
+  }
+
+  if (empty($params['phone_number']))
+  {
+    return new PwgError(401, l10n('Please enter a valid phone number'));
+  }
+
+  $phone_number = tf_normalize_phone_number($params['phone_number']);
+  if (!$phone_number)
+  {
+    return new PwgError(401, l10n('Please enter a valid phone number'));
+  }
+
+  $phone_owner = tf_get_sms_phone_owner($phone_number, $user['id']);
+  if (null !== $phone_owner)
+  {
+    return new PwgError(403, l10n('This phone number is already used by another account.'));
+  }
+
+  $limit_rate = tf_rate_limit(time(), TF_SESSION_SMS_SETUP_RATE_LIMIT, tf_get_sms_resend_delay());
+  if (true !== $limit_rate)
+  {
+    return new PwgError(403, l10n('Please wait %s seconds before sending an SMS again.', $limit_rate));
+  }
+
+  pwg_set_session_var(TF_SESSION_SMS_PHONE_NUMBER, $phone_number);
+
+  return tf_setup_generic($params, 'sms');
+}
+
+/**
  * `Two Factor` : Get 2FA Status
  */
 function tf_status($params)
@@ -264,7 +348,8 @@ function tf_status($params)
 
   return array(
     'external_app' => PwgTwoFactor::isEnabled($user_id, 'external_app'),
-    'email' => PwgTwoFactor::isEnabled($user_id, 'email')
+    'email' => PwgTwoFactor::isEnabled($user_id, 'email'),
+    'sms' => PwgTwoFactor::isEnabled($user_id, 'sms')
   );
 }
 
@@ -287,9 +372,10 @@ function tf_set_config($params)
     !isset($params['config']['general'])
     || !isset($params['config']['external_app'])
     || !isset($params['config']['email'])
+    || !isset($params['config']['sms'])
     )
   {
-    return new PwgError(403, 'Missing parameter, must have: general, external_app, email');
+    return new PwgError(403, 'Missing parameter, must have: general, external_app, email, sms');
   }
 
   $validated_conf = array();
@@ -327,6 +413,42 @@ function tf_set_config($params)
 
         $validated_conf[$key]['enabled'] = get_boolean($config['enabled']);
         break;
+
+      case 'sms':
+        if (
+          !isset($config['enabled'])
+          || !isset($config['base_url'])
+          || !isset($config['api_key'])
+          || !isset($config['sender_text'])
+          || !isset($config['code_ttl'])
+          || !preg_match('/^[1-9]\d*$/', $config['code_ttl'])
+          || !isset($config['resend_delay'])
+          || !preg_match('/^\d+$/', $config['resend_delay'])
+          || !isset($config['debug'])
+        ) {
+          return new PwgError(403, 'Missing parameter sms, must have: enabled, base_url, api_key, sender_text, code_ttl, resend_delay, debug');
+        }
+
+        $base_url = rtrim(trim($config['base_url']), '/');
+        if (!preg_match('#^https://[^\s]+$#i', $base_url))
+        {
+          return new PwgError(403, 'SMS base URL must be a valid HTTPS URL');
+        }
+
+        $sender_text = trim($config['sender_text']);
+        if (strlen($sender_text) > 11)
+        {
+          return new PwgError(403, 'SMS sender text must not exceed 11 characters');
+        }
+
+        $validated_conf[$key]['enabled'] = get_boolean($config['enabled']);
+        $validated_conf[$key]['base_url'] = $base_url;
+        $validated_conf[$key]['api_key'] = trim($config['api_key']);
+        $validated_conf[$key]['sender_text'] = $sender_text;
+        $validated_conf[$key]['code_ttl'] = intval($config['code_ttl']);
+        $validated_conf[$key]['resend_delay'] = intval($config['resend_delay']);
+        $validated_conf[$key]['debug'] = get_boolean($config['debug']);
+        break;
     }
   }
 
@@ -335,7 +457,7 @@ function tf_set_config($params)
 
   return array(
     'message' => 'The configuration has been successfully saved.',
-    'configuration' => $tf_config,
+    'configuration' => tf_normalize_conf($tf_config),
   );
 }
 
@@ -393,6 +515,53 @@ function tf_send_email($params)
 }
 
 /**
+ * `Two Factor` : Send verification code by SMS
+ */
+function tf_send_sms($params)
+{
+  global $user;
+
+  if (is_a_guest() || !connected_with_pwg_ui())
+  {
+    return new PwgError(401, 'Access Denied');
+  }
+
+  if (get_pwg_token() != $params['pwg_token'])
+  {
+    return new PwgError(403, 'Invalid security token');
+  }
+
+  $limit_rate = tf_rate_limit(time(), TF_SESSION_SMS_VERIFY_RATE_LIMIT, tf_get_sms_resend_delay());
+  if (true !== $limit_rate)
+  {
+    return new PwgError(403, l10n('Please wait %s seconds before sending an SMS again.', $limit_rate));
+  }
+
+  if (!PwgTwoFactor::isActivated('sms') || !PwgTwoFactor::isEnabled($user['id'], 'sms'))
+  {
+    return new PwgError(401, 'SMS isn\'t initialized');
+  }
+
+  $tf = new PwgTwoFactor('sms');
+  $phone_number = $tf->getPhoneNumber();
+  if (!$phone_number)
+  {
+    return new PwgError(401, 'SMS phone number is missing');
+  }
+
+  $generated_code = $tf->generateCode();
+  $send_sms = tf_send_sms_message($phone_number, $generated_code, false, $user['id']);
+  if (!$send_sms['success'])
+  {
+    pwg_unset_session_var(TF_SESSION_SMS_CODE);
+    pwg_unset_session_var(TF_SESSION_SMS_SENT_AT);
+    return new PwgError(500, $send_sms['message']);
+  }
+
+  return true;
+}
+
+/**
  * `Two Factor` : Deactivate Two Factor
  */
 function tf_deactivate($params)
@@ -409,9 +578,9 @@ function tf_deactivate($params)
     return new PwgError(403, 'Invalid security token');
   }
 
-  if (!preg_match('/(email|external_app)/', $params['two_factor_method']))
+  if (!preg_match('/(email|sms|external_app)/', $params['two_factor_method']))
   {
-    return new PwgError(401, 'Method can be only email or external_app');
+    return new PwgError(401, 'Method can be only email, sms or external_app');
   }
 
   $user_id = $user['id'];
@@ -466,6 +635,16 @@ function tf_admin_deactivate($params)
     }
     // logger
     $logger->info('[two_factor][user_id='.$user_id.'][method=email][action=deactivated][by_user_id='.$user['id'].']');
+  }
+
+  if (PwgTwoFactor::isEnabled($user_id, 'sms'))
+  {
+    $delete_sms = (new PwgTwoFactor('sms'))->deleteSecret(pwg_db_real_escape_string($user_id));
+    if (!$delete_sms)
+    {
+      return new PwgError(500, 'Error sms');
+    }
+    $logger->info('[two_factor][user_id='.$user_id.'][method=sms][action=deactivated][by_user_id='.$user['id'].']');
   }
 
   return true;

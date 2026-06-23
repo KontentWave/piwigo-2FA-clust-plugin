@@ -8,12 +8,12 @@
 .tf-container input::-webkit-outer-spin-button,
 .tf-container input::-webkit-inner-spin-button {
   -webkit-appearance: none;
-   margin: 0;
+  margin: 0;
 }
 
-.tf-container input[type=number] {
-    -moz-appearance: textfield;
-    appearance: textfield;
+.tf-container input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .tf-container {
@@ -70,11 +70,21 @@
   border-radius: 5px;
   border: 2px solid #d3d3d3;
   background-color: white;
-  width: 50px;
+  width: 100%;
+  max-width: 420px;
 }
 
 .tf-config-method input[type="number"] {
   width: 50px;
+}
+
+.tf-input-container input[type="number"] {
+  width: 90px;
+  max-width: 90px;
+}
+
+.tf-input-container-wide input {
+  max-width: 520px;
 }
 
 .tf-save {
@@ -111,7 +121,7 @@
   background-color: #333;
 }
 
-.dark.tf-save { 
+.dark.tf-save {
   background-color: #444;
   border-color: rgba(0, 0, 0, 0.2);
 }

@@ -1,4 +1,4 @@
-# Two Factor SMS `PROJECT_ROADMAP.md` (The Future 🗺️)
+# Two Factor SMS `PROJECT_ROADMAP.md` (Roadmap 🗺️)
 
 ## Project Vision
 
@@ -41,6 +41,8 @@ sms
 
 Allow a logged-in user to configure and use SMS-based OTP as a Two Factor Authentication method.
 
+Status: implemented.
+
 ### Features
 
 - **SMS Method Registration:** Add `sms` to the allowed 2FA methods.
@@ -49,8 +51,14 @@ Allow a logged-in user to configure and use SMS-based OTP as a Two Factor Authen
 - **SMS Login Flow:** After correct password login, users with enabled SMS 2FA receive/enter an SMS OTP.
 - **Rate Limiting:** Reuse or mirror the email method's rate-limit pattern so users cannot request unlimited SMS messages.
 - **Retry & Lockout:** Reuse existing max-attempt and lockout behavior.
-- **Admin Config:** Add API key, sender text, SMS enabled flag, code TTL, resend delay, and optional debug mode.
+- **Admin Config:** Add API key, sender text, SMS enabled flag, base URL, code TTL, resend delay, and optional debug mode.
 - **Audit Logging:** Log SMS send attempts, accepted provider responses, failed provider responses, and verification outcomes without logging raw OTP codes.
+
+Implementation notes:
+
+- Phone numbers are stored on the existing `TF_TABLE` `sms` row via a `phone_number` column.
+- Upgraded installs self-heal the `phone_number` column at runtime if the normal plugin update hook did not run.
+- The plugin version header stays aligned with the upstream published revision to avoid false compatibility warnings in Piwigo administration.
 
 ### Non-goals
 
@@ -72,9 +80,13 @@ Expose safe helper functions or webservice methods that the Profile Liveness Gua
 
 - **Internal Send Helper:** `tf_sms_send_otp_to_user($user_id, $purpose, $context = array())`
 - **Purpose-aware Messaging:** Support separate message templates for login, setup, and liveness verification.
-- **Provider Response Storage:** Return provider `batch_id` / `msg_id` to callers for traceability.
+- **Provider Response Storage:** Persist or return provider `batch_id` / `msg_id` to callers for traceability.
 - **No Anonymous Sending:** Ensure helper refuses anonymous or visitor-triggered use.
 - **Rate-limit by Purpose:** Liveness resend limits should not collide with login retry UX but must still prevent abuse.
+
+Current gap:
+
+- Phase 1 exposes `tf_send_sms_message(...)` internally and returns `batch_id` / `msg_id` from the provider call, but it does not yet provide the documented PLG-facing helper abstraction.
 
 ---
 
@@ -99,8 +111,12 @@ This is deferred; the OTP confirmation itself should not depend on delivery call
 This plugin must never let public visitors trigger SMS messages to profile owners. SMS can be sent only by:
 
 - the logged-in account owner for their own setup/login flow,
-- the PLG scheduled system task,
-- a webmaster/admin resend action.
+- the PLG scheduled system task once Phase 2 is implemented.
+
+Current implementation note:
+
+- Phase 1 implements owner-driven setup and login SMS flows.
+- PLG-triggered sends and any admin-triggered resend tooling are still roadmap items.
 
 ---
 
@@ -111,3 +127,8 @@ This plugin must never let public visitors trigger SMS messages to profile owner
 - Rate limiting prevents SMS spam.
 - Login remains secure if SMS provider is unavailable.
 - PLG can call a documented helper without knowing SMSTOOLS details.
+
+Current status:
+
+- The first four bullets are satisfied by Phase 1.
+- The PLG helper contract remains open work for Phase 2.

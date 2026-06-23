@@ -6,11 +6,12 @@ require_once(PHPWG_ROOT_PATH . '/include/totp.class.php');
 
 class PwgTwoFactor
 {
-  public static $allowed_methods = array('external_app', 'email');
+  public static $allowed_methods = array('external_app', 'email', 'sms');
   public $method;
   
   private $user;
   private $secret = null;
+  private $last_error = null;
 
   function __construct($method)
   {
@@ -52,6 +53,46 @@ WHERE user_id = '.$user_id.'
       return $result['secret'];
     }
     return null;
+  }
+
+  /**
+   * Get stored phone number for SMS method
+   *
+   * @return string|null
+   */
+  public function getPhoneNumber($user_id = null)
+  {
+    if ('sms' !== $this->method)
+    {
+      return null;
+    }
+
+    tf_ensure_sms_schema();
+
+    $user_id = $user_id ?? pwg_db_real_escape_string($this->user['id']);
+    $query = '
+SELECT phone_number
+  FROM '.TF_TABLE.'
+WHERE user_id = '.$user_id.'
+  AND method = \'sms\'
+;';
+    $result = pwg_db_fetch_assoc(pwg_query($query));
+    if ($result && isset($result['phone_number']))
+    {
+      return $result['phone_number'];
+    }
+
+    return null;
+  }
+
+  /**
+   * Get last setup/send error
+   *
+   * @return string|null
+   */
+  public function getLastError()
+  {
+    return $this->last_error;
   }
 
   /**
@@ -98,7 +139,7 @@ WHERE user_id = ' . pwg_db_real_escape_string($user_id) . '
 
     if (!$method)
     {
-      return $conf['two_factor']['external_app']['enabled'] || $conf['two_factor']['email']['enabled'];
+      return $conf['two_factor']['external_app']['enabled'] || $conf['two_factor']['email']['enabled'] || $conf['two_factor']['sms']['enabled'];
     }
 
     return $conf['two_factor'][$method]['enabled'];
@@ -234,6 +275,24 @@ SELECT
         }
         pwg_set_session_var(TF_SESSION_TMP_RECOVERY_CODES, json_encode($recovery_codes_hash));
         break;
+
+      case 'sms':
+        $phone_number = pwg_get_session_var(TF_SESSION_SMS_PHONE_NUMBER);
+        if (!$phone_number) return null;
+
+        $code = $this->generateCode();
+        $send_sms = tf_send_sms_message($phone_number, $code, true, $this->user['id']);
+        if (!$send_sms['success'])
+        {
+          $this->last_error = $send_sms['message'];
+          pwg_unset_session_var(TF_SESSION_SMS_CODE);
+          pwg_unset_session_var(TF_SESSION_SMS_SENT_AT);
+          $setup = false;
+          break;
+        }
+
+        $setup = true;
+        break;
       
       default:
         return null;
@@ -264,6 +323,9 @@ SELECT
       pwg_unset_session_var(TF_SESSION_TMP_RECOVERY_CODES);
       pwg_unset_session_var(TF_SESSION_MAIL_CODE);
       pwg_unset_session_var(TF_SESSION_MAIL_SENT_AT);
+      pwg_unset_session_var(TF_SESSION_SMS_CODE);
+      pwg_unset_session_var(TF_SESSION_SMS_SENT_AT);
+      pwg_unset_session_var(TF_SESSION_SMS_PHONE_NUMBER);
       return true;
     }
     return false;
@@ -278,9 +340,24 @@ SELECT
   {
     if (!$this->secret) return false;
 
+    if ('sms' === $this->method)
+    {
+      tf_ensure_sms_schema();
+    }
+
     $curr_secret = pwg_db_real_escape_string($this->secret);
     $user_id = pwg_db_real_escape_string($this->user['id']);
     $method = pwg_db_real_escape_string($this->method);
+    $phone_number_sql = 'NULL';
+    if ('sms' === $this->method)
+    {
+      $phone_number = pwg_get_session_var(TF_SESSION_SMS_PHONE_NUMBER);
+      if (!$phone_number)
+      {
+        return false;
+      }
+      $phone_number_sql = '\'' . pwg_db_real_escape_string($phone_number) . '\'';
+    }
 
     $codes = pwg_get_session_var(TF_SESSION_TMP_RECOVERY_CODES);
     $recovery_codes_sql = "NULL";
@@ -290,10 +367,11 @@ SELECT
     }
 
     $query = '
-INSERT INTO '.TF_TABLE.' (user_id, secret, method, recovery_codes, enabled_at)
-  VALUES('.$user_id.', \''.$curr_secret.'\', \''.$method.'\', '.$recovery_codes_sql.', NOW())
+INSERT INTO '.TF_TABLE.' (user_id, secret, method, phone_number, recovery_codes, enabled_at)
+  VALUES('.$user_id.', \''.$curr_secret.'\', \''.$method.'\', '.$phone_number_sql.', '.$recovery_codes_sql.', NOW())
   ON DUPLICATE KEY UPDATE 
     secret = \''.$curr_secret.'\',
+    phone_number = '.$phone_number_sql.',
     recovery_codes = '.$recovery_codes_sql.'
 ';
     pwg_query($query);
@@ -337,6 +415,16 @@ DELETE FROM '.TF_TABLE.'
       $session_sent_at = pwg_get_session_var(TF_SESSION_MAIL_SENT_AT);
       return $code === $session_code && (time() - $session_sent_at < 600);
     }
+
+    if ('sms' === $this->method)
+    {
+      $session_code = pwg_get_session_var(TF_SESSION_SMS_CODE);
+      $session_sent_at = pwg_get_session_var(TF_SESSION_SMS_SENT_AT);
+      return !empty($session_code) && !empty($session_sent_at)
+        && hash_equals((string) $session_code, (string) $code)
+        && (time() - $session_sent_at < tf_get_sms_code_ttl());
+    }
+
     return PwgTOTP::verifyCode($code, $secret ?? $this->secret);
   }
 
@@ -347,6 +435,14 @@ DELETE FROM '.TF_TABLE.'
    */
   public function generateCode()
   {
+    if ('sms' === $this->method)
+    {
+      $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+      pwg_set_session_var(TF_SESSION_SMS_CODE, $code);
+      pwg_set_session_var(TF_SESSION_SMS_SENT_AT, time());
+      return $code;
+    }
+
     $code = PwgTOTP::generateCode($this->secret);
     if ('email' === $this->method)
     {
@@ -363,7 +459,7 @@ DELETE FROM '.TF_TABLE.'
    */
   public function getRecoveryCodes()
   {
-    if ('email' === $this->method) return array();
+    if ('external_app' !== $this->method) return array();
     $query = '
 SELECT *
   FROM `'.TF_TABLE.'`

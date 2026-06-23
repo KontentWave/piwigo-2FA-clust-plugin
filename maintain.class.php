@@ -25,11 +25,18 @@ CREATE TABLE IF NOT EXISTS `'. $this->table .'` (
   `user_id` mediumint(8) unsigned NOT NULL,
   `secret` VARCHAR(255) DEFAULT NULL,
   `method` VARCHAR(50) NOT NULL,
+  `phone_number` VARCHAR(32) DEFAULT NULL,
   `recovery_codes` TEXT DEFAULT NULL,
   `enabled_at` DATETIME DEFAULT NULL,
   PRIMARY KEY (`user_id`, `method`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8
 ;');
+
+    $result = pwg_query('SHOW COLUMNS FROM `'.$this->table.'` LIKE "phone_number";');
+    if (!pwg_db_num_rows($result))
+    {
+      pwg_query('ALTER TABLE `'.$this->table.'` ADD COLUMN `phone_number` VARCHAR(32) DEFAULT NULL AFTER `method`;');
+    }
 
     $result = pwg_query('SHOW COLUMNS FROM `'.USER_INFOS_TABLE.'` LIKE "tf_lockout_duration";');
     if (!pwg_db_num_rows($result))
@@ -47,6 +54,16 @@ CREATE TABLE IF NOT EXISTS `'. $this->table .'` (
 
       include_once(TF_PATH.'/includes/functions.inc.php');
       conf_update_param('two_factor', tf_get_default_conf(), true);
+    }
+    else
+    {
+      if(!defined('TF_PATH'))
+      {
+        define('TF_PATH' , PHPWG_PLUGINS_PATH.basename(dirname(__FILE__)).'/');
+      }
+
+      include_once(TF_PATH.'/includes/functions.inc.php');
+      conf_update_param('two_factor', tf_normalize_conf(safe_unserialize($conf['two_factor'])), true);
     }
   }
 

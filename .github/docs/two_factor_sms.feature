@@ -6,7 +6,8 @@ Feature: SMS two-factor authentication
   So that I can secure my account without installing an authenticator app
 
   Background:
-    Given the Two Factor SMS plugin is enabled
+    Given the Two Factor plugin is enabled
+    And SMS two-factor authentication is enabled in plugin settings
     And SMSTOOLS API credentials are configured
     And a registered user "gallery_owner" exists with password "password123"
 
@@ -53,6 +54,17 @@ Feature: SMS two-factor authentication
     When I request another SMS code immediately
     Then the request should be rejected
     And I should see how long to wait before requesting another code
+
+  Scenario: User cannot reuse another account's verification phone number
+    Given another registered user "regular_visitor" exists with password "password123"
+    And "gallery_owner" has enabled SMS two-factor authentication with phone "+421905000000"
+    And I am logged in as "regular_visitor"
+    And I am on my profile page
+    When I open the "Two Factor Authentication" section
+    And I enter "+421905000000" as my verification phone number
+    And I request an SMS setup code
+    Then the request should be rejected
+    And I should see that the phone number is already used by another account
 
   Scenario: User cannot send SMS to another user's phone
     Given another registered user "regular_visitor" exists with password "password123"

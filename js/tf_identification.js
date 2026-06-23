@@ -1,58 +1,79 @@
 window.toasterOnStart = window.toasterOnStart || [];
 let loadingMail = false;
+let loadingSms = false;
 let timeBeforeResent = 60;
+let timeBeforeSmsResent = window.tfSmsResendDelay ?? 60;
 let timeoutBeforeResent;
+let timeoutBeforeSmsResent;
 let canSentMail = true;
+let canSentSms = true;
 let tf_pwg_token;
-$(function() {
-  tf_pwg_token = $('#pwg_token').val();
-  $('#tf_validate_email, #tf_send_again').on('click', function() {
-    $('#tf_use_method').text(str_use_email);
-    $('#method_totp').val('email');
+$(function () {
+  tf_pwg_token = $("#pwg_token").val();
+  $("#tf_validate_email, #tf_send_again").on("click", function () {
+    $("#tf_use_method").text(str_use_email);
+    $("#method_totp").val("email");
 
     if (loadingMail) return;
     if (canSentMail) {
       tfsendMail();
     } else {
       const text = sprintf(str_email_wait_until, timeBeforeResent);
-      pwgToaster({ text: text, icon: 'error' });
+      pwgToaster({ text: text, icon: "error" });
     }
   });
-  $('#tf_validate_app').on('click', function() {
-    $('#tf_use_method').text(str_use_app);
-    $('#method_totp').val('external_app');
-    tfNextStep('external_app');
+  $("#tf_validate_app").on("click", function () {
+    $("#tf_use_method").text(str_use_app);
+    $("#method_totp").val("external_app");
+    tfNextStep("external_app");
+  });
+  $("#tf_validate_sms, #tf_send_again_sms").on("click", function () {
+    $("#tf_use_method").text(str_use_sms);
+    $("#method_totp").val("sms");
+
+    if (loadingSms) return;
+    if (canSentSms) {
+      tfsendSms();
+    } else {
+      const text = sprintf(str_sms_wait_until, timeBeforeSmsResent);
+      pwgToaster({ text: text, icon: "error" });
+    }
   });
 
   const startOn = window.tfStartOn ?? false;
-  if ('email' == startOn) {
+  if ("email" == startOn) {
     // $('#tf_validate_email').trigger('click');
-    $('#tf_use_method').text(str_use_email);
-    $('#method_totp').val('email');
-    $('#tf_send_again_in').hide();
-    tfNextStep('email');
-  } else if ('external_app' == startOn) {
-    $('#tf_validate_app').trigger('click');
+    $("#tf_use_method").text(str_use_email);
+    $("#method_totp").val("email");
+    $("#tf_send_again_in").hide();
+    tfNextStep("email");
+  } else if ("sms" == startOn) {
+    $("#tf_use_method").text(str_use_sms);
+    $("#method_totp").val("sms");
+    $("#tf_send_again_in_sms").hide();
+    tfNextStep("sms");
+  } else if ("external_app" == startOn) {
+    $("#tf_validate_app").trigger("click");
   } else {
-    $('#tf_select_method').show();
+    $("#tf_select_method").show();
   }
 
-  $('#tf_go_back').on('click', function() {
+  $("#tf_go_back").on("click", function () {
     tfResetStep();
   });
 
   window.toasterOnStart.forEach((t, i) => {
     setTimeout(() => {
-      pwgToaster({ text: t.text, icon: t.icon});
-    }, 200)
-  })
+      pwgToaster({ text: t.text, icon: t.icon });
+    }, 200);
+  });
 
-  const inputs = $('#tf_verify_code .input-container input');
-  inputs.each(function(i, input) {
+  const inputs = $("#tf_verify_code .input-container input");
+  inputs.each(function (i, input) {
     // write code
-    $(input).on('input', function(e) {
+    $(input).on("input", function (e) {
       let val = $(input).val();
-      val = val.replace(/[^0-9]/g, '');
+      val = val.replace(/[^0-9]/g, "");
       $(input).val(val);
 
       if (val.length === 1 && i + 1 < inputs.length) {
@@ -62,20 +83,21 @@ $(function() {
     });
 
     // paste code
-    $(input).on('paste', function(e) {
+    $(input).on("paste", function (e) {
       e.preventDefault();
 
-      const clipboardData = (e.originalEvent || e).clipboardData || window.clipboardData;
+      const clipboardData =
+        (e.originalEvent || e).clipboardData || window.clipboardData;
       if (!clipboardData) return;
 
-      let pasted = clipboardData.getData('text');
-      pasted = pasted.replace(/[^0-9]/g, '');
+      let pasted = clipboardData.getData("text");
+      pasted = pasted.replace(/[^0-9]/g, "");
       if (!pasted) return;
 
-      const chars = pasted.split('');
+      const chars = pasted.split("");
       let j = i;
 
-      chars.forEach(char => {
+      chars.forEach((char) => {
         if (j < inputs.length) {
           $(inputs[j]).val(char);
           j++;
@@ -90,14 +112,20 @@ $(function() {
     });
 
     // navigation
-    $(input).on('keydown', function(e) {
+    $(input).on("keydown", function (e) {
       // go back
-      if ((e.key === "Backspace" || e.key === "Delete" || e.key === "ArrowLeft") && !$(input).val() && i > 0) {
+      if (
+        (e.key === "Backspace" ||
+          e.key === "Delete" ||
+          e.key === "ArrowLeft") &&
+        !$(input).val() &&
+        i > 0
+      ) {
         $(inputs[i - 1]).focus();
       }
 
       // go forward
-      if (e.key === "ArrowRight" && !$(input).val() && i+1 < inputs.length) {
+      if (e.key === "ArrowRight" && !$(input).val() && i + 1 < inputs.length) {
         $(inputs[i + 1]).focus();
       }
     });
@@ -105,73 +133,81 @@ $(function() {
 });
 
 function updateInput() {
-  let value = ''
-  $('#tf_verify_code .otp-input').each((i, input) => {
-    value += $(input).val().length == 1 ? $(input).val() : ''
+  let value = "";
+  $("#tf_verify_code .otp-input").each((i, input) => {
+    value += $(input).val().length == 1 ? $(input).val() : "";
   });
-  $('#full_totp').val(value);
+  $("#full_totp").val(value);
   if (value.length == 6) {
-    $('#tf_verify').trigger('click');
+    $("#tf_verify").trigger("click");
   }
 }
 
 function tfNextStep(method) {
-  $('#tf_select_method').fadeOut(200, () => {
-    if (method === 'email') {
-      $('#tf_totp_external_app').hide();
-      $('#tf_totp_email, #tf_contact_admin').show();
+  $("#tf_select_method").fadeOut(200, () => {
+    if (method === "email") {
+      $("#tf_totp_external_app, #tf_totp_sms").hide();
+      $("#tf_totp_email, #tf_contact_admin").show();
+    } else if (method === "sms") {
+      $("#tf_totp_external_app, #tf_totp_email").hide();
+      $("#tf_totp_sms, #tf_contact_admin").show();
     } else {
-      $('#tf_totp_email, #tf_contact_admin').hide();
-      $('#tf_totp_external_app').show();
+      $("#tf_totp_email, #tf_totp_sms, #tf_contact_admin").hide();
+      $("#tf_totp_external_app").show();
       tfEventRecoveryCode();
     }
 
-    $('#tf_select_desc').hide();
-    $('#tf_verify_code').show();
-    $('#pwg_token').val(tf_pwg_token);
-    $('#otp_1').trigger('focus');
+    $("#tf_select_desc").hide();
+    $("#tf_verify_code").show();
+    $("#pwg_token").val(tf_pwg_token);
+    $("#otp_1").trigger("focus");
   });
 }
 
 function tfResetStep() {
-  $('#tf_verify_code').fadeOut(200, () => {
-    $('#tf_totp_external_app, #tf_recovery_code, #tf_verify_code').hide();
-    $('#tf_select_desc, #tf_select_method, #tf_contact_admin').show();
-    $('#tf_verify_code input').val('');
-    $('#full_totp').val('');
+  $("#tf_verify_code").fadeOut(200, () => {
+    $(
+      "#tf_totp_external_app, #tf_totp_email, #tf_totp_sms, #tf_recovery_code, #tf_verify_code",
+    ).hide();
+    $("#tf_select_desc, #tf_select_method, #tf_contact_admin").show();
+    $("#tf_verify_code input").val("");
+    $("#full_totp").val("");
     tfClearEventRecoveryCode();
   });
 }
 
 function tfsendMail() {
-  $('#tf_loading_email').show();
+  $("#tf_loading_email").show();
   loadingMail = true;
   $.ajax({
-    url: 'ws.php?format=json&method=twofactor.sendEmail',
-    type: 'POST',
-    dataType: 'json',
+    url: "ws.php?format=json&method=twofactor.sendEmail",
+    type: "POST",
+    dataType: "json",
     data: {
       tf_send_mail: true,
-      pwg_token: tf_pwg_token
+      pwg_token: tf_pwg_token,
     },
-    success: function(res) {
-      $('#tf_loading_email').hide();
+    success: function (res) {
+      $("#tf_loading_email").hide();
       loadingMail = false;
 
       if (res) {
-        tfNextStep('email');
+        tfNextStep("email");
         timeBeforeResent = 60;
         tfResentEmail();
         return;
       }
-      pwgToaster({ text: res.message ?? str_handle_error, icon: 'error' });
+      pwgToaster({ text: res.message ?? str_handle_error, icon: "error" });
     },
-    error: function(e) {
-      $('#tf_loading_email').hide();
+    error: function (e) {
+      $("#tf_loading_email").hide();
       loadingMail = false;
-      pwgToaster({ text: e.responseJSON?.message ?? str_handle_error, icon: 'error' });
-    }
-  })
+      pwgToaster({
+        text: e.responseJSON?.message ?? str_handle_error,
+        icon: "error",
+      });
+    },
+  });
 }
 
 function tfResentEmail() {
@@ -179,34 +215,91 @@ function tfResentEmail() {
 
   if (timeBeforeResent === 0) {
     canSentMail = true;
-    $('#tf_send_again_in').hide(() => {
-      $('#tf_send_again').show();
+    $("#tf_send_again_in").hide(() => {
+      $("#tf_send_again").show();
     });
     return;
   }
 
   canSentMail = false;
-  $('#tf_send_again').hide();
+  $("#tf_send_again").hide();
   const text = sprintf(str_send_again_in, timeBeforeResent);
-  $('#tf_send_again_in').text(text).show();
+  $("#tf_send_again_in").text(text).show();
   timeBeforeResent--;
 
   timeoutBeforeResent = setTimeout(tfResentEmail, 1000);
 }
 
-function tfEventRecoveryCode() {
-  $('#tf_totp_external_app u').off('click').on('click', function() {
-    $('#tf_verify_code').hide();
-    // $('#pwg_token_recovery').val(tf_pwg_token);
-    $('#tf_recovery_input').val('');
-    $('#tf_recovery_code').show();
-  });
+function tfsendSms() {
+  $("#tf_loading_sms").show();
+  loadingSms = true;
+  $.ajax({
+    url: "ws.php?format=json&method=twofactor.sendSms",
+    type: "POST",
+    dataType: "json",
+    data: {
+      pwg_token: tf_pwg_token,
+    },
+    success: function (res) {
+      $("#tf_loading_sms").hide();
+      loadingSms = false;
 
-  $('#tf_reset_recovery').off('click').on('click', function() {
-    tfResetStep();
+      if (res) {
+        tfNextStep("sms");
+        timeBeforeSmsResent = window.tfSmsResendDelay ?? 60;
+        tfResentSms();
+        return;
+      }
+      pwgToaster({ text: res.message ?? str_handle_error, icon: "error" });
+    },
+    error: function (e) {
+      $("#tf_loading_sms").hide();
+      loadingSms = false;
+      pwgToaster({
+        text: e.responseJSON?.message ?? str_handle_error,
+        icon: "error",
+      });
+    },
   });
 }
 
+function tfResentSms() {
+  clearTimeout(timeoutBeforeSmsResent);
+
+  if (timeBeforeSmsResent === 0) {
+    canSentSms = true;
+    $("#tf_send_again_in_sms").hide(() => {
+      $("#tf_send_again_sms").show();
+    });
+    return;
+  }
+
+  canSentSms = false;
+  $("#tf_send_again_sms").hide();
+  const text = sprintf(str_send_again_in, timeBeforeSmsResent);
+  $("#tf_send_again_in_sms").text(text).show();
+  timeBeforeSmsResent--;
+
+  timeoutBeforeSmsResent = setTimeout(tfResentSms, 1000);
+}
+
+function tfEventRecoveryCode() {
+  $("#tf_totp_external_app u")
+    .off("click")
+    .on("click", function () {
+      $("#tf_verify_code").hide();
+      // $('#pwg_token_recovery').val(tf_pwg_token);
+      $("#tf_recovery_input").val("");
+      $("#tf_recovery_code").show();
+    });
+
+  $("#tf_reset_recovery")
+    .off("click")
+    .on("click", function () {
+      tfResetStep();
+    });
+}
+
 function tfClearEventRecoveryCode() {
-  $('#tf_totp_external_app u').off('click');
+  $("#tf_totp_external_app u").off("click");
 }

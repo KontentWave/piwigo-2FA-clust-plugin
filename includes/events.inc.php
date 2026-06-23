@@ -18,9 +18,17 @@ function tf_add_profile_block()
     );
     $template->append('PLUGINS_PROFILE', $block);
 
+    $sms_phone_number = '';
+    if (PwgTwoFactor::isEnabled($user['id'], 'sms'))
+    {
+      $sms_phone_number = (new PwgTwoFactor('sms'))->getPhoneNumber() ?: '';
+    }
+
     $template->assign(array(
       'TF_STATUS_EXTERNAL_APP' => boolean_to_string(PwgTwoFactor::isEnabled($user['id'], 'external_app')),
       'TF_STATUS_EMAIL' => boolean_to_string(PwgTwoFactor::isEnabled($user['id'], 'email')),
+      'TF_STATUS_SMS' => boolean_to_string(PwgTwoFactor::isEnabled($user['id'], 'sms')),
+      'TF_SMS_PHONE_NUMBER' => $sms_phone_number,
       'TF_CONFIG' => $conf['two_factor'],
       'TF_DOCLINK' => 'fr_FR' === $user['language'] 
         ? 'https://doc-fr.piwigo.org/les-utilisateurs/se-connecter-a-piwigo/two-factor-authentication-activez-la-double-authentification-sur-piwigo'
@@ -62,8 +70,9 @@ function tf_try_log_user($success, $username, $password, $remember_me)
   // check if these methods is activated (config) and enabled (user setup)
   $has_external_app = PwgTwoFactor::isActivated('external_app') && PwgTwoFactor::isEnabled($user['id'], 'external_app');
   $has_email = PwgTwoFactor::isActivated('email') && PwgTwoFactor::isEnabled($user['id'], 'email');
+  $has_sms = PwgTwoFactor::isActivated('sms') && PwgTwoFactor::isEnabled($user['id'], 'sms');
   
-  if ($has_external_app || $has_email)
+  if ($has_external_app || $has_email || $has_sms)
   {
     $_SESSION[TF_SESSION_VALIDATED] = false;
     $_SESSION[TF_SESSION_TRIES_LEFT] = $conf['two_factor']['general']['max_attempts'];
@@ -202,12 +211,14 @@ function tf_loc_begin_identification()
  */
 function tf_loc_end_identification()
 {
-  global $template, $user, $page;
+  global $template, $user, $page, $conf;
   if (isset($_GET['tf']) && (isset($_SESSION[TF_SESSION_VALIDATED]) && !$_SESSION[TF_SESSION_VALIDATED]))
   {
     $template->assign(array(
       'TF_STATUS_EXTERNAL_APP' => PwgTwoFactor::isActivated('external_app') && PwgTwoFactor::isEnabled($user['id'], 'external_app'),
       'TF_STATUS_EMAIL' => PwgTwoFactor::isActivated('email') && PwgTwoFactor::isEnabled($user['id'], 'email'),
+      'TF_STATUS_SMS' => PwgTwoFactor::isActivated('sms') && PwgTwoFactor::isEnabled($user['id'], 'sms'),
+      'TF_SMS_RESEND_DELAY' => tf_get_sms_resend_delay(),
       'F_ACTION' => 'identification.php?tf',
       'TF_LOGOUT' => get_root_url().'?act=logout',
       'PWG_TOKEN' => get_pwg_token()

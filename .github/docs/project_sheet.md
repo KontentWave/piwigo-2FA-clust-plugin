@@ -1,12 +1,14 @@
-# Two Factor SMS `project_sheet.md` (The Present 📜)
+# Two Factor SMS `project_sheet.md` (Implemented Phase 1 📜)
 
-This document is the living technical specification for adding SMS OTP support to Piwigo's official `two_factor` plugin.
+This document records the implemented Phase 1 SMS OTP customization for Piwigo's official `two_factor` plugin.
 
 The customization should be implemented in a local fork or derivative plugin, not as a large unrelated patch inside CPT.
 
 ---
 
 ## Phase 1: SMSTOOLS-backed SMS OTP
+
+Status: complete for MVP use.
 
 ### `Action`
 
@@ -93,34 +95,61 @@ CPT
 
 ## Configuration
 
-Add or extend Piwigo `two_factor` config:
+The implemented Piwigo `two_factor` SMS config is:
 
 ```php
 $conf['two_factor']['sms'] = array(
   'enabled' => false,
-  'provider' => 'smstools',
-  'apikey' => '',
-  'sender_text' => 'PIWIGO',
-  'simple_text' => true,
-  'code_ttl_seconds' => 600,
-  'resend_delay_seconds' => 60,
-  'setup_resend_delay_seconds' => 60,
-  'login_resend_delay_seconds' => 60,
-  'debug_log_provider_response' => false,
+  'base_url' => 'https://api.smstools.sk',
+  'api_key' => '',
+  'sender_text' => '',
+  'code_ttl' => 600,
+  'resend_delay' => 60,
+  'debug' => false,
 );
 ```
 
-Security note: never expose `apikey` to JavaScript, templates, logs, or webservice responses.
+Notes:
+
+- `base_url` was added so the API host is configurable without code edits.
+- `sender_text` is validated to SMSTOOLS' 11-character limit.
+- `api_key` remains server-side only and is not exposed to frontend JavaScript or status payloads.
+- The implementation currently uses one resend delay value for setup and login flows.
 
 ---
 
 ## Data Model
 
-Minimum addition to `two_factor` storage:
+The MVP stores SMS state in the existing `TF_TABLE`.
 
-The existing `TF_TABLE` can store the method `sms` using the same method/secret model as email.
+Implemented addition:
 
-Suggested additional metadata table for phone verification:
+```sql
+ALTER TABLE piwigo_two_factor
+  ADD COLUMN phone_number VARCHAR(32) DEFAULT NULL AFTER method;
+```
+
+Stored in `TF_TABLE` per `(user_id, method)` row:
+
+- `method = 'sms'`
+- `secret`
+- `phone_number`
+- `enabled_at`
+
+Not implemented in Phase 1:
+
+- separate `piwigo_two_factor_sms_profile` table
+- persisted `phone_verified_at`
+- persisted `last_provider_batch_id`
+- persisted `last_provider_msg_id`
+
+The important rule remains that this verification phone is not treated as a public profile phone field.
+
+Operational note:
+
+- upgraded installs that missed the normal plugin update path lazily add `phone_number` at runtime before SMS reads/writes, to avoid fatal errors during rollout.
+
+Original design sketch retained for future expansion:
 
 ```sql
 CREATE TABLE piwigo_two_factor_sms_profile (
@@ -163,14 +192,26 @@ Validation:
 
 ## Main Functions
 
+Implemented helpers and control points are:
+
 ```php
-tf_sms_normalize_phone(string $raw): ?string
-tf_sms_generate_code(): string
-tf_sms_send_code(int $user_id, string $phone_e164, string $purpose): array|PwgError
-tf_sms_store_session_code(string $code, string $purpose): void
-tf_sms_verify_code(string $code, string $purpose): bool
-tf_sms_rate_limit(string $purpose, int $now): true|int
+tf_normalize_phone_number($phone_number): string|false
+tf_get_sms_phone_owner($phone_number, $exclude_user_id = null): ?int
+tf_mask_phone_number($phone_number): string
+tf_generate_sms_message($code, $setup = false): string
+tf_send_sms_message($phone_number, $code, $setup = false, $user_id = null): array
+tf_get_sms_code_ttl(): int
+tf_get_sms_resend_delay(): int
+tf_rate_limit($time, $session_key, $window): true|int
 ```
+
+Method-specific behavior is centered in `PwgTwoFactor` via:
+
+- `setup()`
+- `finaliseSetup()`
+- `saveSecret()`
+- `verifyCode()`
+- `generateCode()`
 
 ---
 
@@ -183,7 +224,7 @@ Step 1: owner submits phone, plugin sends setup OTP.
 Parameters:
 
 ```text
-phone
+phone_number
 pwg_token
 ```
 
@@ -230,7 +271,7 @@ pwg_token
 4. Plugin sends SMS setup code.
 5. Owner enters code.
 6. Plugin enables method `sms`.
-7. Phone is marked verified.
+7. Phone number is saved on the `sms` method row in `TF_TABLE`.
 
 ---
 
@@ -244,9 +285,30 @@ pwg_token
 - Do not log OTP codes.
 - Do not expose API key.
 - Do not save provider response bodies containing sensitive data unless debug is explicitly enabled.
-- OTP expires after `code_ttl_seconds`, default 600 seconds.
+- OTP expires after `code_ttl`, default 600 seconds.
 - Wrong codes count against existing max-attempts.
 - Provider failure should fail closed: login remains incomplete, but no album privacy action is taken by this plugin.
+
+---
+
+## Implementation Status
+
+Implemented in Phase 1 MVP:
+
+- `sms` is registered as a valid 2FA method.
+- Admin settings support SMS enablement, base URL, API key, sender text, code TTL, resend delay, and debug mode.
+- Profile/UCP setup flow sends and verifies SMS codes.
+- Login flow supports SMS verification and resend.
+- Phone numbers are normalized server-side and protected against cross-user reuse.
+- Provider responses are handled safely and optionally logged in debug mode.
+- Admin user list shows SMS enablement state without exposing the phone number.
+
+Still open after Phase 1 MVP:
+
+- automated PHPUnit coverage
+- automated Cypress or browser E2E coverage
+- separate SMS profile metadata storage
+- reusable PLG-facing helper API
 
 ---
 
@@ -299,3 +361,7 @@ pwg_token
 - Provider errors are handled safely.
 - The API key remains server-only.
 - Unit and browser tests cover setup, send, verify, and rate limit paths.
+
+Phase 1 MVP outcome:
+
+- All items above are implemented except the automated test coverage, which remains pending.

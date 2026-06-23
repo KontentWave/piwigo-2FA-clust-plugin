@@ -6,21 +6,29 @@ window.tf_twofactor = window.tf_twofactor || {};
 window.tf_twofactor = {
   str_add_email_before: "{"Please add an email first before activating two factor authentication by email."|translate|escape:javascript}",
   str_email_dont_match: "{"Emails don't match"|translate|escape:javascript}",
+  str_phone_dont_match: "{"Phone numbers don't match"|translate|escape:javascript}",
   str_invalid_code: "{"The code is invalid"|translate|escape:javascript}",
   str_email_setup_success: "{"Email two-factor authentication has been successfully enabled"|translate|escape:javascript}",
+  str_sms_setup_success: "{"SMS two-factor authentication has been successfully enabled"|translate|escape:javascript}",
   str_external_setup_success: "{"Two-factor authentication by application has been successfully activated."|translate|escape:javascript}",
   str_code_recovery_copy: "{"The recovery codes have been copied."|translate|escape:javascript}",
   str_send_again: "{"Send again."|translate|escape:javascript}",
   str_send_again_in: "{"Send it again in %s seconds."|translate|escape:javascript}",
   str_email_waint_until: "{"Please wait %s seconds before sending an email again."|translate|escape:javascript}",
+  str_sms_wait_until: "{"Please wait %s seconds before sending an SMS again."|translate|escape:javascript}",
   str_deactivate_email: "{"Do you really want to disable two factor authentication by email?"|translate|escape:javascript}",
+  str_deactivate_sms: "{"Do you really want to disable two factor authentication by SMS?"|translate|escape:javascript}",
   str_deactivate_external: "{"Do you really want to disable two factor authentication by application?"|translate|escape:javascript}",
   str_deactivate_email_success: "{"Two-factor authentication by email has been successfully deactivated"|translate|escape:javascript}",
+  str_deactivate_sms_success: "{"Two-factor authentication by SMS has been successfully deactivated"|translate|escape:javascript}",
   str_deactivate_external_success: "{"Two-factor authentication by application has been successfully deactivated"|translate|escape:javascript}",
+  sms_phone_number: "{$TF_SMS_PHONE_NUMBER|escape:javascript}",
+  sms_resend_delay: {$TF_CONFIG.sms.resend_delay|intval},
 
   enabled: {
     external_app: {$TF_STATUS_EXTERNAL_APP},
-    email: {$TF_STATUS_EMAIL}
+    email: {$TF_STATUS_EMAIL},
+    sms: {$TF_STATUS_SMS}
   }
 };
 {/footer_script}
@@ -170,6 +178,73 @@ window.tf_twofactor = {
     </div>
 
     <div id="tf_email_setting" class="tf-settings">
+      <i class="icon-cog"></i>
+    </div>
+  </div>
+  {/if}
+
+  {if true === $TF_CONFIG.sms.enabled}
+  <div class="tf-setup">
+    <label class="switch tf-switch">
+      <input type="checkbox" id="tf_sms" data-collapse="tf_sms_setup" data-open="false">
+      <span class="slider round tf-slider"></span>
+    </label>
+
+    <div class="column-flex tf-content">
+      <label for="tf_sms" class="tf-title" id="tf_sms_setup_title">
+        <p class="tf-setup-title row-flex">{'Set up using SMS'|translate|escape:html}</p>
+        <p class="tf-setup-subtitle">{'We will send you the authentication code by SMS.'|translate|escape:html}</p>
+      </label>
+
+      <div class="tf-collapse close" id="tf_sms_setup">
+        <div class="column-flex">
+          <label for="tf_phone_number">{'Your phone number'|translate}</label>
+          <div class="row-flex input-container">
+            <i class="icon-comment"></i>
+            <input type="text" name="tf_phone_number" id="tf_phone_number" value="{$TF_SMS_PHONE_NUMBER|escape:html}" />
+          </div>
+        </div>
+
+        <div class="column-flex">
+          <label for="tf_conf_phone_number">{'Confirm your phone number'|translate}</label>
+          <div class="row-flex input-container tf-conf-mail">
+            <i class="icon-comment"></i>
+            <input type="text" name="tf_conf_phone_number" id="tf_conf_phone_number" />
+          </div>
+          <p id="tf_sms_error" class="error-message"><i class="gallery-icon-attention-circled"></i>
+            <span id="tf_sms_error_text">{'must not be empty'|translate}</span></p>
+        </div>
+
+        <div class="save">
+          <button class="btn btn-main" id="tf_send_sms_setup">{'Send SMS'|translate}</button>
+        </div>
+
+        <div class="" id="tf_verify_sms">
+          <p class="tf-send-again">
+            {'You didn’t get the SMS?'|translate}
+            <span id="tf_send_sms_again" class="tf-underline">{'Send again.'|translate}</span>
+            <span id="tf_send_sms_again_in">{'Send it again in %s seconds.'|translate}</span>
+          </p>
+
+          <div class="column-flex">
+            <label for="tf_totp_sms">{'Enter the code'|translate}</label>
+            <div class="row-flex input-container">
+              <i class="icon-key"></i>
+              <input type="text" name="tf_totp_sms" id="tf_totp_sms" placeholder="XXXXXX" />
+            </div>
+            <p id="tf_sms_totp_error" class="error-message"><i class="gallery-icon-attention-circled"></i>
+              {'must not be empty'|translate}</p>
+          </div>
+
+          <div class="save">
+            <button class="btn btn-cancel" id="tf_send_sms_cancel">{'Cancel'|translate}</button>
+            <button class="btn btn-main" id="tf_send_sms_code">{'Save'|translate}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tf_sms_setting" class="tf-settings">
       <i class="icon-cog"></i>
     </div>
   </div>

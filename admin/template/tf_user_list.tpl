@@ -15,6 +15,10 @@ const tf_str_title = "{"two_factor_js"|translate|escape:javascript}";
         <p class="user-property-label">{"2FA by email"|translate}</p>
         <i class="icon-circle-empty tf-icon icon-red" id="tf_icon_email"></i>
       </div>
+      <div class="tf-method">
+        <p class="user-property-label">{"2FA by SMS"|translate}</p>
+        <i class="icon-circle-empty tf-icon icon-red" id="tf_icon_sms"></i>
+      </div>
     </div>
     <div class="tf-deactivate-btn" id="tf_btn_reset">
       <button class="user-property-button head-button-2" id="tf_btn_deactivate">

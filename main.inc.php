@@ -53,6 +53,11 @@ define('TF_SESSION_MAIL_CODE', 'tf_mail_codes');
 define('TF_SESSION_MAIL_SENT_AT', 'tf_mail_sent_at');
 define('TF_SESSION_MAIL_SETUP_RATE_LIMIT', 'tf_mail_setup_rate_limit');
 define('TF_SESSION_MAIL_VERIFY_RATE_LIMIT', 'tf_mail_verify_rate_limit');
+define('TF_SESSION_SMS_CODE', 'tf_sms_codes');
+define('TF_SESSION_SMS_SENT_AT', 'tf_sms_sent_at');
+define('TF_SESSION_SMS_PHONE_NUMBER', 'tf_sms_phone_number');
+define('TF_SESSION_SMS_SETUP_RATE_LIMIT', 'tf_sms_setup_rate_limit');
+define('TF_SESSION_SMS_VERIFY_RATE_LIMIT', 'tf_sms_verify_rate_limit');
 
 // +-----------------------------------------------------------------------+
 // | Init Two Factor                                                       |
@@ -61,6 +66,7 @@ define('TF_SESSION_MAIL_VERIFY_RATE_LIMIT', 'tf_mail_verify_rate_limit');
 $conf['two_factor'] = safe_unserialize($conf['two_factor']);
 include_once(TF_REALPATH . '/class/twofactor.class.php');
 include_once(TF_REALPATH.'/includes/functions.inc.php');
+$conf['two_factor'] = tf_normalize_conf($conf['two_factor']);
 $tf_events = TF_REALPATH.'/includes/events.inc.php';
 $tf_fws = TF_REALPATH.'/includes/ws_functions.inc.php';
 
@@ -100,7 +106,7 @@ function tf_init()
     if (
       defined('IN_WS')
       && isset($_REQUEST['method'])
-      && 'twofactor.sendEmail' === $_REQUEST['method']
+      && in_array($_REQUEST['method'], array('twofactor.sendEmail', 'twofactor.sendSms'), true)
     )
     {
       return;

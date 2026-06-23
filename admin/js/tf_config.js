@@ -1,11 +1,18 @@
-const maxAttempts = $('#max_attempts');
-const lockoutDuration = $('#lockout_duration');
-const externalApp = $('#external_app');
-const tfEmail = $('#tf_email');
-const btnSaveSettings = $('#tf_save_settings');
-const unsavedChanges = $('#tf_unsaved_changes');
-const tfsaveChanges = $('#tf_saving_changes');
-const tferrorsChanges = $('#tf_error_changes');
+const maxAttempts = $("#max_attempts");
+const lockoutDuration = $("#lockout_duration");
+const externalApp = $("#external_app");
+const tfEmail = $("#tf_email");
+const tfSms = $("#tf_sms");
+const smsBaseUrl = $("#sms_base_url");
+const smsApiKey = $("#sms_api_key");
+const smsSenderText = $("#sms_sender_text");
+const smsCodeTtl = $("#sms_code_ttl");
+const smsResendDelay = $("#sms_resend_delay");
+const smsDebug = $("#sms_debug");
+const btnSaveSettings = $("#tf_save_settings");
+const unsavedChanges = $("#tf_unsaved_changes");
+const tfsaveChanges = $("#tf_saving_changes");
+const tferrorsChanges = $("#tf_error_changes");
 
 let loadingSaveSettings = false;
 let timeout;
@@ -13,53 +20,90 @@ let timeout;
 $(function () {
   setEvents();
   fillConfig(TF_CONFIG);
-})
+});
 
 function fillConfig(config) {
   maxAttempts.val(config.general.max_attempts);
   lockoutDuration.val(config.general.lockout_duration);
 
-  externalApp.prop('checked', config.external_app.enabled);
-  tfEmail.prop('checked', config.email.enabled);
+  externalApp.prop("checked", config.external_app.enabled);
+  tfEmail.prop("checked", config.email.enabled);
+  tfSms.prop("checked", config.sms.enabled);
+  smsBaseUrl.val(config.sms.base_url);
+  smsApiKey.val(config.sms.api_key);
+  smsSenderText.val(config.sms.sender_text);
+  smsCodeTtl.val(config.sms.code_ttl);
+  smsResendDelay.val(config.sms.resend_delay);
+  smsDebug.prop("checked", config.sms.debug);
 }
 
 function getConfig() {
   const config = {
     general: {
       max_attempts: Number(maxAttempts.val()),
-      lockout_duration: Number(lockoutDuration.val())
+      lockout_duration: Number(lockoutDuration.val()),
     },
     external_app: {
-      enabled: externalApp.prop('checked'),
+      enabled: externalApp.prop("checked"),
     },
     email: {
-      enabled: tfEmail.prop('checked'),
+      enabled: tfEmail.prop("checked"),
     },
-  }
+    sms: {
+      enabled: tfSms.prop("checked"),
+      base_url: smsBaseUrl.val().trim(),
+      api_key: smsApiKey.val().trim(),
+      sender_text: smsSenderText.val().trim(),
+      code_ttl: Number(smsCodeTtl.val()),
+      resend_delay: Number(smsResendDelay.val()),
+      debug: smsDebug.prop("checked"),
+    },
+  };
 
   return config;
 }
 
 function setEvents() {
-  $('.tf-container input[type="number"]').off('input').on('input', function () {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => {
-      toggleChanges();
-    }, 100);
-  });
+  $('.tf-container input[type="number"]')
+    .off("input")
+    .on("input", function () {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        toggleChanges();
+      }, 100);
+    });
 
-  externalApp.off('change').on('change', function () {
+  externalApp.off("change").on("change", function () {
     toggleChanges();
   });
 
-  tfEmail.off('change').on('change', function () {
+  tfEmail.off("change").on("change", function () {
     toggleChanges();
   });
 
-  btnSaveSettings.off('click').on('click', function () {
+  tfSms.off("change").on("change", function () {
+    toggleChanges();
+  });
+
+  $(
+    "#sms_base_url, #sms_api_key, #sms_sender_text, #sms_code_ttl, #sms_resend_delay",
+  )
+    .off("input")
+    .on("input", function () {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        toggleChanges();
+      }, 100);
+    });
+
+  smsDebug.off("change").on("change", function () {
+    toggleChanges();
+  });
+
+  btnSaveSettings.off("click").on("click", function () {
     if (loadingSaveSettings) return;
     const config = getConfig();
-    const match = deepEqual(TF_CONFIG, config)
+    const match = deepEqual(TF_CONFIG, config);
     if (match) return;
 
     sendConfig(config);
@@ -67,17 +111,24 @@ function setEvents() {
 }
 
 function clearEvents() {
-  $('.tf-container input[type="number"]').off('input');
-  externalApp.off('change');
-  tfEmail.off('change');
-  btnSaveSettings.off('click');
+  $('.tf-container input[type="number"]').off("input");
+  externalApp.off("change");
+  tfEmail.off("change");
+  tfSms.off("change");
+  $(
+    "#sms_base_url, #sms_api_key, #sms_sender_text, #sms_code_ttl, #sms_resend_delay",
+  ).off("input");
+  smsDebug.off("change");
+  btnSaveSettings.off("click");
 }
 
 function deepEqual(a, b) {
   if (a === b) return true;
-  if (typeof a != "object" || typeof b != "object" || a == null || b == null) return false;
+  if (typeof a != "object" || typeof b != "object" || a == null || b == null)
+    return false;
 
-  let keysA = Object.keys(a), keysB = Object.keys(b);
+  let keysA = Object.keys(a),
+    keysB = Object.keys(b);
   if (keysA.length !== keysB.length) return false;
 
   for (let key of keysA) {
@@ -99,28 +150,28 @@ function toggleChanges() {
 
 function sendConfig(config) {
   $.ajax({
-    url: 'ws.php?format=json&method=twofactor.setConfig',
-    type: 'POST',
-    dataType: 'json',
+    url: "ws.php?format=json&method=twofactor.setConfig",
+    type: "POST",
+    dataType: "json",
     data: {
       config,
-      pwg_token: PWG_TOKEN
+      pwg_token: PWG_TOKEN,
     },
-    success: function(res) {
+    success: function (res) {
       unsavedChanges.hide();
       tferrorsChanges.hide();
-      if (res.stat === 'ok') {
+      if (res.stat === "ok") {
         tfsaveChanges.fadeIn();
-        TF_CONFIG = {...res.result.configuration};
+        TF_CONFIG = { ...res.result.configuration };
         return;
       }
       tferrorsChanges.fadeIn();
       // console.log(res);
     },
-    error: function(e) {
+    error: function (e) {
       unsavedChanges.hide();
       tferrorsChanges.hide();
       tferrorsChanges.fadeIn();
-    }
+    },
   });
 }
