@@ -76,6 +76,20 @@ if (!function_exists('pwg_db_fetch_row')) {
   }
 }
 
+if (!function_exists('pwg_db_fetch_assoc')) {
+  function pwg_db_fetch_assoc($result)
+  {
+    return $GLOBALS['tf_test_fetch_assoc_result'] ?? null;
+  }
+}
+
+if (!function_exists('pwg_db_real_escape_string')) {
+  function pwg_db_real_escape_string($value)
+  {
+    return (string) $value;
+  }
+}
+
 if (!function_exists('is_webmaster')) {
   function is_webmaster()
   {
@@ -111,6 +125,7 @@ class SmsHelpersTest extends TestCase
     $GLOBALS['tf_test_owned_albums'] = array();
     $GLOBALS['tf_test_image_membership_count'] = 0;
     $GLOBALS['tf_test_last_query'] = null;
+    $GLOBALS['tf_test_fetch_assoc_result'] = null;
     $GLOBALS['tf_test_is_webmaster'] = false;
     $GLOBALS['tf_test_is_admin'] = false;
   }
@@ -278,6 +293,25 @@ class SmsHelpersTest extends TestCase
     PwgTwoFactor::$enabled_methods[7] = array('email', 'sms');
 
     $this->assertSame(2, tf_count_enabled_two_factor_methods(7));
+  }
+
+  public function testGetVerifiedSmsPhoneReturnsStoredPhoneNumber(): void
+  {
+    $GLOBALS['tf_test_fetch_assoc_result'] = array(
+      'phone_number' => '+421905000000',
+    );
+
+    $this->assertSame('+421905000000', tf_get_verified_sms_phone(7));
+    $this->assertStringContainsString("SELECT phone_number", (string) $GLOBALS['tf_test_last_query']);
+    $this->assertStringContainsString("user_id = 7", (string) $GLOBALS['tf_test_last_query']);
+  }
+
+  public function testGetVerifiedSmsPhoneReturnsNullWhenMissing(): void
+  {
+    $GLOBALS['tf_test_fetch_assoc_result'] = null;
+
+    $this->assertNull(tf_get_verified_sms_phone(7));
+    $this->assertNull(tf_get_verified_sms_phone(0));
   }
 
   public function testAlbumOwnerRequirementIgnoresOwnedAlbumsWithoutImages(): void

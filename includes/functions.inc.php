@@ -706,6 +706,38 @@ LIMIT 1
 }
 
 /**
+ * `Two Factor` : get the verified stored SMS phone number for a user
+ */
+function tf_get_verified_sms_phone($user_id)
+{
+  $user_id = (int) $user_id;
+  if ($user_id <= 0)
+  {
+    return null;
+  }
+
+  if (function_exists('pwg_db_num_rows'))
+  {
+    tf_ensure_sms_schema();
+  }
+
+  $result = pwg_db_fetch_assoc(pwg_query('
+SELECT phone_number
+  FROM '.TF_TABLE.'
+WHERE user_id = '.pwg_db_real_escape_string($user_id).'
+  AND method = \'sms\'
+LIMIT 1
+;'));
+
+  if (!$result || empty($result['phone_number']))
+  {
+    return null;
+  }
+
+  return (string) $result['phone_number'];
+}
+
+/**
  * `Two Factor` : mask phone number for logs
  */
 function tf_mask_phone_number($phone_number)
