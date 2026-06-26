@@ -1,4 +1,4 @@
-{combine_script id='tf_script' load='footer' path="{$TF_PATH}js/tf_profile.js"}
+{combine_script id='tf_script_phase2_sms' load='footer' path="{$TF_PATH}js/tf_profile.js"}
 {combine_css path="{$TF_PATH}css/tf_profile.css" order=-10}
 {combine_css path="admin/themes/default/fontello/css/animation.css" order=10}
 {footer_script}
@@ -23,6 +23,11 @@ window.tf_twofactor = {
   str_deactivate_sms_success: "{"Two-factor authentication by SMS has been successfully deactivated"|translate|escape:javascript}",
   str_deactivate_external_success: "{"Two-factor authentication by application has been successfully deactivated"|translate|escape:javascript}",
   sms_phone_number: "{$TF_SMS_PHONE_NUMBER|escape:javascript}",
+  sms_profile_phone_number: "{$TF_SMS_PROFILE_PHONE_NUMBER|escape:javascript}",
+  sms_profile_phone_normalized: "{$TF_SMS_PROFILE_PHONE_NORMALIZED|escape:javascript}",
+  sms_profile_phone_available: {if $TF_SMS_PROFILE_PHONE_AVAILABLE}true{else}false{/if},
+  sms_profile_phone_error: "{$TF_SMS_PROFILE_PHONE_ERROR|escape:javascript}",
+  sms_phone_needs_reverify: {if $TF_SMS_PHONE_NEEDS_REVERIFY}true{else}false{/if},
   sms_resend_delay: {$TF_CONFIG.sms.resend_delay|intval},
 
   enabled: {
@@ -197,26 +202,27 @@ window.tf_twofactor = {
       </label>
 
       <div class="tf-collapse close" id="tf_sms_setup">
+        {if $TF_SMS_PROFILE_PHONE_AVAILABLE}
         <div class="column-flex">
-          <label for="tf_phone_number">{'Your phone number'|translate}</label>
+          <label>{'Phone number from My Profile'|translate}</label>
           <div class="row-flex input-container">
             <i class="icon-comment"></i>
-            <input type="text" name="tf_phone_number" id="tf_phone_number" value="{$TF_SMS_PHONE_NUMBER|escape:html}" />
+            <input type="text" value="{$TF_SMS_PROFILE_PHONE_NUMBER|escape:html}" readonly />
           </div>
+          <p class="tf-setup-subtitle">{'The phone number used for SMS verification comes from My Profile.'|translate}</p>
         </div>
+        {else}
+        <p id="tf_sms_profile_phone_error" class="error-message" style="display:block"><i class="gallery-icon-attention-circled"></i>
+          {$TF_SMS_PROFILE_PHONE_ERROR|default:{'Please add a valid contact phone number in My Profile first.'|translate}|escape:html}</p>
+        {/if}
 
-        <div class="column-flex">
-          <label for="tf_conf_phone_number">{'Confirm your phone number'|translate}</label>
-          <div class="row-flex input-container tf-conf-mail">
-            <i class="icon-comment"></i>
-            <input type="text" name="tf_conf_phone_number" id="tf_conf_phone_number" />
-          </div>
-          <p id="tf_sms_error" class="error-message"><i class="gallery-icon-attention-circled"></i>
-            <span id="tf_sms_error_text">{'must not be empty'|translate}</span></p>
-        </div>
+        {if $TF_SMS_PHONE_NEEDS_REVERIFY}
+        <p class="error-message" style="display:block"><i class="gallery-icon-attention-circled"></i>
+          {'Your verified SMS phone no longer matches the contact phone in My Profile. Deactivate and re-enable SMS to verify the updated number.'|translate}</p>
+        {/if}
 
         <div class="save">
-          <button class="btn btn-main" id="tf_send_sms_setup">{'Send SMS'|translate}</button>
+          <button type="button" class="btn btn-main" id="tf_send_sms_setup" {if !$TF_SMS_PROFILE_PHONE_AVAILABLE}disabled{/if}>{'Send SMS'|translate}</button>
         </div>
 
         <div class="" id="tf_verify_sms">
@@ -237,8 +243,8 @@ window.tf_twofactor = {
           </div>
 
           <div class="save">
-            <button class="btn btn-cancel" id="tf_send_sms_cancel">{'Cancel'|translate}</button>
-            <button class="btn btn-main" id="tf_send_sms_code">{'Save'|translate}</button>
+            <button type="button" class="btn btn-cancel" id="tf_send_sms_cancel">{'Cancel'|translate}</button>
+            <button type="button" class="btn btn-main" id="tf_send_sms_code">{'Save'|translate}</button>
           </div>
         </div>
       </div>

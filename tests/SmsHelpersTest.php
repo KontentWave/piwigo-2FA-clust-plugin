@@ -107,5 +107,29 @@ class SmsHelpersTest extends TestCase
     $this->assertSame(600, $normalized['sms']['code_ttl']);
     $this->assertSame(60, $normalized['sms']['resend_delay']);
     $this->assertFalse($normalized['sms']['debug']);
+    $this->assertTrue($normalized['sms']['use_cpt_profile_phone']);
+    $this->assertFalse($normalized['sms']['allow_manual_sms_phone']);
+    $this->assertSame('contact_number', $normalized['sms']['profile_contact_field']);
+    $this->assertFalse($normalized['sms']['require_contact_sms_enabled']);
+  }
+
+  public function testSmsSetupPhoneCandidateFailsClosedWithoutCptProfilePhone(): void
+  {
+    $candidate = tf_get_sms_setup_phone_candidate(7);
+
+    $this->assertFalse($candidate['available']);
+    $this->assertNull($candidate['normalized_phone']);
+    $this->assertSame('Please add a valid contact phone number in My Profile first.', $candidate['error']);
+  }
+
+  public function testSmsSetupPhoneCandidateReturnsNoSourceWhenCptModeDisabled(): void
+  {
+    global $conf;
+    $conf['two_factor']['sms']['use_cpt_profile_phone'] = false;
+
+    $candidate = tf_get_sms_setup_phone_candidate(7);
+
+    $this->assertFalse($candidate['available']);
+    $this->assertNull($candidate['error']);
   }
 }

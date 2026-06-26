@@ -119,6 +119,273 @@ function tf_normalize_conf($config)
 }
 
 /**
+ * `Two Factor` : whether SMS setup should use CPT profile phone
+ */
+function tf_use_cpt_profile_phone()
+{
+  global $conf;
+
+  $sms_config = $conf['two_factor']['sms'] ?? array();
+  if (!array_key_exists('use_cpt_profile_phone', $sms_config))
+  {
+    return true;
+  }
+
+  return (bool) $sms_config['use_cpt_profile_phone'];
+}
+
+/**
+ * `Two Factor` : whether manual SMS phone entry is allowed
+ */
+function tf_allow_manual_sms_phone()
+{
+  global $conf;
+
+  return !empty($conf['two_factor']['sms']['allow_manual_sms_phone']);
+}
+
+/**
+ * `Two Factor` : source field key for CPT contact phone
+ */
+function tf_get_cpt_profile_contact_field_key()
+{
+  global $conf;
+
+  $field_key = trim((string) ($conf['two_factor']['sms']['profile_contact_field'] ?? 'contact_number'));
+  return '' === $field_key ? 'contact_number' : $field_key;
+}
+
+/**
+ * `Two Factor` : whether CPT contact SMS flag is required for setup
+ */
+function tf_require_cpt_contact_sms_enabled()
+{
+  global $conf;
+
+  return !empty($conf['two_factor']['sms']['require_contact_sms_enabled']);
+}
+
+/**
+ * `Two Factor` : whether CPT owner profile storage can be read
+ */
+function tf_cpt_profile_available()
+{
+  if (function_exists('cpt_owner_profile_table_exists'))
+  {
+    return cpt_owner_profile_table_exists();
+  }
+
+  if (!function_exists('pwg_query') || !function_exists('pwg_db_real_escape_string'))
+  {
+    return false;
+  }
+
+  global $prefixeTable;
+  $table = defined('CPT_OWNER_PROFILE_TABLE') ? CPT_OWNER_PROFILE_TABLE : $prefixeTable . 'cpt_owner_profile';
+  $result = pwg_query("SHOW TABLES LIKE '".pwg_db_real_escape_string($table)."'");
+
+  return (bool) ($result && function_exists('pwg_db_fetch_row') && pwg_db_fetch_row($result));
+}
+
+/**
+ * `Two Factor` : fetch CPT owner profile contact rows for a user
+ */
+function tf_get_cpt_owner_profile_contact_rows($user_id)
+{
+  $user_id = (int) $user_id;
+  if ($user_id <= 0 || !tf_cpt_profile_available())
+  {
+    return array();
+  }
+
+  $field_keys = array('contact_number', 'contact_phone', 'contact_sms', 'contact_whatsapp');
+
+  if (
+    function_exists('cpt_get_effective_owner_root_album_id_for_user')
+    && function_exists('cpt_fetch_owner_profile_rows')
+  ) {
+    $root_album_id = cpt_get_effective_owner_root_album_id_for_user($user_id);
+    if (null !== $root_album_id)
+    {
+      $rows = cpt_fetch_owner_profile_rows((int) $root_album_id, $user_id);
+      return array_intersect_key($rows, array_flip($field_keys));
+    }
+  }
+
+  if (!function_exists('pwg_query') || !function_exists('pwg_db_fetch_assoc'))
+  {
+    return array();
+  }
+
+  global $prefixeTable;
+  $table = defined('CPT_OWNER_PROFILE_TABLE') ? CPT_OWNER_PROFILE_TABLE : $prefixeTable . 'cpt_owner_profile';
+  $query = '
+SELECT field_key, value_text, tag_id
+  FROM '. $table .'
+WHERE owner_user_id = '. $user_id .'
+  AND field_key IN (\'contact_number\', \'contact_phone\', \'contact_sms\', \'contact_whatsapp\')
+ORDER BY updated_at DESC
+;';
+
+  $result = pwg_query($query);
+  if (!$result)
+  {
+    return array();
+  }
+
+  $rows = array();
+  while ($row = pwg_db_fetch_assoc($result))
+  {
+    $field_key = (string) ($row['field_key'] ?? '');
+    if ('' === $field_key || isset($rows[$field_key]))
+    {
+      continue;
+    }
+
+    $rows[$field_key] = array(
+      'field_key' => $field_key,
+      'value_text' => isset($row['value_text']) ? (string) $row['value_text'] : null,
+      'tag_id' => isset($row['tag_id']) && '' !== (string) $row['tag_id'] ? (int) $row['tag_id'] : null,
+    );
+  }
+
+  return $rows;
+}
+
+/**
+ * `Two Factor` : read raw CPT contact phone
+ */
+function tf_get_cpt_profile_contact_number($user_id)
+{
+  $rows = tf_get_cpt_owner_profile_contact_rows($user_id);
+  $field_key = tf_get_cpt_profile_contact_field_key();
+  $value = trim((string) ($rows[$field_key]['value_text'] ?? ''));
+
+  return '' === $value ? null : $value;
+}
+
+/**
+ * `Two Factor` : convert controlled CPT contact flag to bool
+ */
+function tf_get_cpt_contact_flag_value($row)
+{
+  if (!is_array($row) || empty($row))
+  {
+    return null;
+  }
+
+  if (isset($row['tag_id']) && null !== $row['tag_id'])
+  {
+    if (1 === (int) $row['tag_id'])
+    {
+      return true;
+    }
+
+    if (2 === (int) $row['tag_id'])
+    {
+      return false;
+    }
+  }
+
+  $value = strtolower(trim((string) ($row['value_text'] ?? '')));
+  if (in_array($value, array('1', 'yes', 'true'), true))
+  {
+    return true;
+  }
+
+  if (in_array($value, array('0', 'no', 'false'), true))
+  {
+    return false;
+  }
+
+  return null;
+}
+
+/**
+ * `Two Factor` : CPT contact channel flags
+ */
+function tf_get_cpt_profile_contact_flags($user_id)
+{
+  $rows = tf_get_cpt_owner_profile_contact_rows($user_id);
+
+  return array(
+    'contact_phone' => tf_get_cpt_contact_flag_value($rows['contact_phone'] ?? null),
+    'contact_sms' => tf_get_cpt_contact_flag_value($rows['contact_sms'] ?? null),
+    'contact_whatsapp' => tf_get_cpt_contact_flag_value($rows['contact_whatsapp'] ?? null),
+  );
+}
+
+/**
+ * `Two Factor` : derive the SMS setup phone candidate from CPT
+ */
+function tf_get_sms_setup_phone_candidate($user_id)
+{
+  $flags = tf_get_cpt_profile_contact_flags($user_id);
+  $candidate = array(
+    'available' => false,
+    'raw_phone' => null,
+    'normalized_phone' => null,
+    'masked_phone' => null,
+    'source' => null,
+    'flags' => $flags,
+    'error' => null,
+  );
+
+  if (!tf_use_cpt_profile_phone())
+  {
+    return $candidate;
+  }
+
+  $raw_phone = tf_get_cpt_profile_contact_number($user_id);
+  if (empty($raw_phone))
+  {
+    $candidate['error'] = l10n('Please add a valid contact phone number in My Profile first.');
+    return $candidate;
+  }
+
+  $normalized_phone = tf_normalize_phone_number($raw_phone);
+  if (!$normalized_phone)
+  {
+    $candidate['error'] = l10n('Please add a valid contact phone number in My Profile first.');
+    return $candidate;
+  }
+
+  if (tf_require_cpt_contact_sms_enabled() && false === ($flags['contact_sms'] ?? null))
+  {
+    $candidate['error'] = l10n('Please enable SMS contact in My Profile first.');
+    return $candidate;
+  }
+
+  $candidate['available'] = true;
+  $candidate['raw_phone'] = $raw_phone;
+  $candidate['normalized_phone'] = $normalized_phone;
+  $candidate['masked_phone'] = tf_mask_phone_number($normalized_phone);
+  $candidate['source'] = 'cpt_owner_profile.' . tf_get_cpt_profile_contact_field_key();
+
+  return $candidate;
+}
+
+/**
+ * `Two Factor` : whether the verified SMS phone differs from the CPT phone
+ */
+function tf_sms_phone_needs_reverify($user_id, $verified_phone)
+{
+  $verified_phone = tf_normalize_phone_number($verified_phone);
+  if (!$verified_phone)
+  {
+    return false;
+  }
+
+  $candidate = tf_get_sms_setup_phone_candidate($user_id);
+  if (empty($candidate['available']) || empty($candidate['normalized_phone']))
+  {
+    return false;
+  }
+
+  return $candidate['normalized_phone'] !== $verified_phone;
+}
+
+/**
  * `Two Factor` : ensure SMS schema additions exist on upgraded installs
  */
 function tf_ensure_sms_schema()
@@ -430,6 +697,10 @@ function tf_get_default_conf()
       'code_ttl' => 600,
       'resend_delay' => 60,
       'debug' => false,
+      'use_cpt_profile_phone' => true,
+      'allow_manual_sms_phone' => false,
+      'profile_contact_field' => 'contact_number',
+      'require_contact_sms_enabled' => false,
     ),
     'general' => array(
       'max_attempts' => 3,                    // Maximum number of failed attempts before lockout

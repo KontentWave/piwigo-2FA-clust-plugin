@@ -386,3 +386,495 @@ Phase 1 MVP outcome:
 - All runtime MVP features are implemented.
 - Initial automated PHPUnit and Cypress coverage is now in place.
 - Full test-plan completion remains pending for login, lockout, resend, deactivation, and provider-integrated scenarios.
+
+
+# Two Factor SMS `project_sheet.md` Extension: CPT Profile Phone Source
+
+## Phase 2: Draw SMS Verification Phone From CPT Owner Profile
+
+Status: planned documentation extension.
+
+### `Action`
+
+Change the SMS setup flow so the phone number used for SMS verification is drawn from the owner profile data managed by the CPT plugin instead of being entered as an independent free-form value inside the Two Factor Authentication block.
+
+This keeps the user experience simple for a non-technical audience:
+
+```text
+My Profile
+= owner edits the public/contact phone number once
+
+Two Factor Authentication
+= owner only verifies that profile phone by SMS
+
+Profile Liveness Guard
+= later uses the verified SMS phone for weekly liveness checks
+```
+
+---
+
+## Why This Change Exists
+
+The current Phase 1 SMS implementation works, but it stores the SMS phone directly in the `two_factor` table after setup. That was useful for a first working MVP, but the portal now has a richer owner profile managed by CPT.
+
+The contact phone is part of the public/profile identity and availability workflow, so it should be edited in the same place as the other profile fields:
+
+```text
+CPT My Profile
+```
+
+The Two Factor plugin should not become a second profile editor.
+
+---
+
+## Current CPT Source Data
+
+CPT stores owner profile fields in a CPT-owned table:
+
+```sql
+piwigo_cpt_owner_profile
+```
+
+Relevant columns:
+
+```text
+root_album_id
+owner_user_id
+field_key
+value_text
+tag_id
+updated_at
+```
+
+The contact-related field keys currently in scope are:
+
+```text
+contact_number
+contact_phone
+contact_sms
+contact_whatsapp
+```
+
+Important interpretation:
+
+```text
+contact_number
+= the actual phone number text
+
+contact_phone
+= controlled Yes/No flag: phone calls allowed/displayed
+
+contact_sms
+= controlled Yes/No flag: SMS allowed/displayed
+
+contact_whatsapp
+= controlled Yes/No flag: WhatsApp allowed/displayed
+```
+
+So the Two Factor plugin must not treat `contact_phone`, `contact_sms`, or `contact_whatsapp` as phone numbers. They are contact-channel flags. The real source number is `contact_number`.
+
+---
+
+## Design Decision
+
+CPT is the canonical editor for the profile/contact phone.
+
+Two Factor SMS is the verification authority.
+
+```text
+CPT contact_number
+= proposed profile phone / contact source
+= editable by the owner in My Profile
+
+Two Factor sms phone_number
+= verified SMS target
+= stored only after successful OTP confirmation
+
+PLG
+= uses the verified Two Factor phone, not an unverified CPT value
+```
+
+This avoids silently trusting a newly edited public profile phone before it has been verified.
+
+---
+
+## Phone Source Precedence
+
+### SMS setup screen
+
+When SMS is not enabled yet:
+
+```text
+1. Read CPT contact_number for the current user/root owner profile.
+2. Normalize it using Two Factor SMS phone normalization.
+3. Show it in the SMS setup UI as the phone to verify.
+4. If the number is missing or invalid, disable SMS setup and tell the owner to update My Profile first.
+```
+
+### SMS login challenge
+
+When SMS is already enabled:
+
+```text
+Use the verified phone_number stored in the two_factor table.
+```
+
+Do not read a fresh CPT phone during login. Login must use the previously verified phone.
+
+### CPT phone changed after SMS was enabled
+
+When CPT `contact_number` differs from the verified Two Factor `phone_number`:
+
+```text
+1. Mark SMS verification as needing re-verification in the UI.
+2. Do not silently overwrite the verified phone.
+3. Do not send liveness/PLG SMS to the new CPT phone until OTP verification succeeds.
+```
+
+MVP option:
+
+```text
+Show warning only and let the owner deactivate/reactivate SMS.
+```
+
+Better follow-up option:
+
+```text
+Add an explicit "Verify updated profile phone" flow.
+```
+
+---
+
+## Recommended Configuration
+
+Add SMS config flags:
+
+```php
+$conf['two_factor']['sms'] = array(
+  'enabled' => false,
+  'base_url' => 'https://api.smstools.sk',
+  'api_key' => '',
+  'sender_text' => '',
+  'code_ttl' => 600,
+  'resend_delay' => 60,
+  'debug' => false,
+
+  // Phase 2 CPT integration
+  'use_cpt_profile_phone' => true,
+  'allow_manual_sms_phone' => false,
+  'profile_contact_field' => 'contact_number',
+  'require_contact_sms_enabled' => false,
+);
+```
+
+Field meaning:
+
+```text
+use_cpt_profile_phone
+= read phone from CPT when preparing SMS setup
+
+allow_manual_sms_phone
+= fallback switch for local testing or emergency use
+
+profile_contact_field
+= defaults to contact_number
+
+require_contact_sms_enabled
+= optional stricter rule: setup SMS only if CPT contact_sms is Yes
+```
+
+Recommended production defaults:
+
+```text
+use_cpt_profile_phone = true
+allow_manual_sms_phone = false
+require_contact_sms_enabled = false for MVP
+```
+
+Reason: `contact_sms` is mostly a public contact preference. The verification phone can still be used for account safety even if public SMS contact is disabled. If the business rule later says "liveness by SMS requires SMS contact enabled", then switch `require_contact_sms_enabled` to true.
+
+---
+
+## CPT Read Helper Design
+
+Add helper functions in `includes/functions.inc.php` or a small new file such as:
+
+```text
+includes/cpt_profile_phone.inc.php
+```
+
+Suggested functions:
+
+```php
+tf_cpt_profile_available(): bool
+```
+
+Returns true when CPT profile storage can be read.
+
+```php
+tf_get_cpt_owner_profile_contact_rows(int $user_id): array
+```
+
+Returns contact rows from CPT for the current owner/root album.
+
+```php
+tf_get_cpt_profile_contact_number(int $user_id): ?string
+```
+
+Returns the raw `contact_number` value from CPT.
+
+```php
+tf_get_cpt_profile_contact_flags(int $user_id): array
+```
+
+Returns parsed Yes/No flags for `contact_phone`, `contact_sms`, and `contact_whatsapp`.
+
+```php
+tf_get_sms_setup_phone_candidate(int $user_id): array
+```
+
+Returns a normalized, UI-ready phone source payload.
+
+Suggested return shape:
+
+```php
+array(
+  'available' => true,
+  'raw_phone' => '+421 905 000 000',
+  'normalized_phone' => '+421905000000',
+  'source' => 'cpt_owner_profile.contact_number',
+  'flags' => array(
+    'contact_phone' => true,
+    'contact_sms' => true,
+    'contact_whatsapp' => false,
+  ),
+  'error' => null,
+)
+```
+
+---
+
+## SQL Access Pattern
+
+Prefer using CPT constants/helpers when loaded:
+
+```php
+if (defined('CPT_OWNER_PROFILE_TABLE')) {
+  $table = CPT_OWNER_PROFILE_TABLE;
+}
+```
+
+Fallback table name when CPT is not bootstrapped:
+
+```php
+$table = $prefixeTable . 'cpt_owner_profile';
+```
+
+Preferred query when the CPT root-owner helper is available:
+
+```sql
+SELECT field_key, value_text, tag_id
+FROM piwigo_cpt_owner_profile
+WHERE owner_user_id = :user_id
+  AND root_album_id = :root_album_id
+  AND field_key IN ('contact_number', 'contact_phone', 'contact_sms', 'contact_whatsapp')
+```
+
+Fallback query when the root album cannot be resolved:
+
+```sql
+SELECT field_key, value_text, tag_id
+FROM piwigo_cpt_owner_profile
+WHERE owner_user_id = :user_id
+  AND field_key IN ('contact_number', 'contact_phone', 'contact_sms', 'contact_whatsapp')
+ORDER BY updated_at DESC
+```
+
+Important rule:
+
+```text
+Use contact_number as the phone number.
+Use contact_phone/contact_sms/contact_whatsapp only as channel flags.
+```
+
+---
+
+## Server-Side Setup Rule
+
+`tf_setup_sms()` must not trust the phone number submitted by JavaScript when CPT-phone mode is enabled.
+
+Recommended behavior:
+
+```php
+if ($conf['two_factor']['sms']['use_cpt_profile_phone']) {
+  $candidate = tf_get_sms_setup_phone_candidate((int) $user['id']);
+
+  if (empty($candidate['normalized_phone'])) {
+    return new PwgError(401, l10n('Please add a valid contact phone number in My Profile first.'));
+  }
+
+  $phone_number = $candidate['normalized_phone'];
+
+  if (!empty($params['phone_number'])) {
+    $submitted = tf_normalize_phone_number($params['phone_number']);
+    if ($submitted !== $phone_number) {
+      return new PwgError(403, l10n('The submitted phone number does not match your profile phone number.'));
+    }
+  }
+}
+```
+
+Manual phone entry should only be accepted when:
+
+```text
+use_cpt_profile_phone = false
+```
+
+or:
+
+```text
+allow_manual_sms_phone = true
+```
+
+---
+
+## Profile UI Contract
+
+Currently the SMS template has editable fields:
+
+```text
+Your phone number
+Confirm your phone number
+```
+
+Phase 2 UX should become:
+
+```text
+Phone number from My Profile
+Confirm this phone number
+```
+
+Recommended MVP behavior:
+
+```text
+- The main phone input is prefilled from CPT and readonly.
+- The owner must retype the same number in the confirmation input.
+- If no valid CPT phone exists, show a message: "Add your contact phone in My Profile first."
+- The Send SMS button is disabled until a valid CPT phone is available.
+```
+
+Suggested Smarty variables:
+
+```text
+TF_SMS_PROFILE_PHONE_NUMBER
+TF_SMS_PROFILE_PHONE_NORMALIZED
+TF_SMS_PROFILE_PHONE_MASKED
+TF_SMS_PROFILE_PHONE_AVAILABLE
+TF_SMS_PROFILE_PHONE_SOURCE
+TF_SMS_PROFILE_PHONE_ERROR
+TF_SMS_VERIFIED_PHONE_NUMBER
+TF_SMS_PHONE_NEEDS_REVERIFY
+```
+
+Existing variable compatibility:
+
+```text
+TF_SMS_PHONE_NUMBER
+```
+
+should remain available, but it should represent the verified Two Factor phone when SMS is already enabled.
+
+---
+
+## JavaScript Changes
+
+Current `setupSms(phone, code)` sends the visible input value as `phone_number`.
+
+Phase 2 behavior:
+
+```text
+- Keep sending `phone_number` for backward compatibility.
+- Populate it from the readonly CPT phone source.
+- Do not allow owner-edited arbitrary phone values in CPT-phone mode.
+- Still keep the confirmation check to reduce accidental verification of the wrong displayed number.
+```
+
+If `TF_SMS_PROFILE_PHONE_AVAILABLE` is false:
+
+```text
+- opening the SMS section shows a toaster error
+- Send SMS button remains disabled
+- owner is directed to My Profile
+```
+
+---
+
+## Data Flow
+
+```text
+1. Owner edits contact_number in CPT My Profile.
+2. Two Factor profile block reads CPT contact_number.
+3. Owner opens SMS setup.
+4. Two Factor displays CPT phone as readonly source.
+5. Owner confirms the displayed phone.
+6. Two Factor sends OTP to the CPT phone.
+7. Owner enters OTP.
+8. Two Factor saves normalized phone_number to TF_TABLE on method = sms.
+9. PLG later uses verified TF_TABLE phone, not raw CPT phone.
+```
+
+---
+
+## Security Rules
+
+- Do not trust submitted `phone_number` when CPT-phone mode is enabled.
+- Do not let anonymous visitors trigger SMS.
+- Do not let one user verify another user's CPT phone.
+- Do not use `contact_phone`, `contact_sms`, or `contact_whatsapp` as phone numbers.
+- Do not send PLG/liveness SMS to an unverified CPT value.
+- Do not silently overwrite the verified Two Factor phone when CPT profile phone changes.
+- Keep API key server-only.
+- Log phone values only masked.
+- Reject malformed phone values before calling SMSTOOLS.
+
+---
+
+## PHPUnit Test Plan
+
+1. Reads `contact_number` from `piwigo_cpt_owner_profile` for the current owner.
+2. Ignores `contact_phone`, `contact_sms`, and `contact_whatsapp` as phone-number sources.
+3. Correctly parses contact-channel flags from controlled Yes/No fields.
+4. Uses `root_album_id` when CPT root helper is available.
+5. Falls back safely when CPT is installed but helper functions are unavailable.
+6. Fails closed when CPT phone is missing and manual fallback is disabled.
+7. Rejects a submitted phone that differs from the CPT phone.
+8. Allows setup when submitted phone matches the CPT phone.
+9. Keeps login SMS using the already verified `TF_TABLE.phone_number`.
+10. Detects when CPT phone differs from verified SMS phone and marks re-verification needed.
+11. Does not expose the full phone number in admin/status payloads.
+12. Masks phone numbers in logs and UI diagnostics.
+
+---
+
+## Cypress / E2E Acceptance Scenarios
+
+1. Owner sees SMS setup phone prefilled from CPT My Profile.
+2. Owner cannot edit the source phone inside the 2FA block when CPT-phone mode is enabled.
+3. Owner must confirm the displayed phone before SMS is sent.
+4. Owner without a CPT contact number sees a clear instruction to update My Profile first.
+5. Owner changes CPT contact number and 2FA shows that SMS verification needs to be refreshed.
+6. Owner completes SMS verification and PLG shows the verified masked phone.
+7. Crafted request with a different phone number is rejected server-side.
+
+---
+
+## Definition of Done
+
+- The SMS setup screen draws its phone number from CPT `contact_number`.
+- Manual phone entry in the 2FA block is disabled by default.
+- Server-side setup re-reads CPT and rejects mismatched submitted phone values.
+- Successful SMS setup stores the normalized verified phone in the existing `two_factor.phone_number` column.
+- PLG continues to use the verified Two Factor phone for liveness checks.
+- CPT channel flags are interpreted as flags only, not as phone-number values.
+- Missing or invalid CPT phone fails closed with a clear owner-facing message.
+- Tests cover successful setup, missing phone, mismatched phone, stale verified phone, and flag interpretation.

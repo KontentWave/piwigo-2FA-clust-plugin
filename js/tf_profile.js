@@ -244,24 +244,20 @@ function resentEmail() {
 function eventSetupSms() {
   $("#tf_send_sms_setup, #tf_send_sms_again")
     .off("click")
-    .on("click", function () {
-      const phone = $("#tf_phone_number").val().trim();
-      const phoneConf = $("#tf_conf_phone_number").val().trim();
+    .on("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
 
-      if (!phoneConf) {
-        $("#tf_sms_error_text").text(str_must_not_empty);
-        $("#tf_sms_error").show();
-        return;
-      }
-
-      if (phone !== phoneConf) {
-        $("#tf_sms_error_text").text(window.tf_twofactor.str_phone_dont_match);
-        $("#tf_sms_error").show();
+      if (!window.tf_twofactor.sms_profile_phone_available) {
+        pwgToaster({
+          text: window.tf_twofactor.sms_profile_phone_error || str_handle_error,
+          icon: "error",
+        });
         return;
       }
 
       if (canSentSms) {
-        setupSms(phone);
+        setupSms();
       } else {
         const text = sprintf(
           window.tf_twofactor.str_sms_wait_until,
@@ -275,7 +271,10 @@ function eventSetupSms() {
 function eventFinalSetupSms() {
   $("#tf_send_sms_code")
     .off("click")
-    .on("click", function () {
+    .on("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+
       const code = $("#tf_totp_sms").val();
 
       if (!code) {
@@ -283,12 +282,15 @@ function eventFinalSetupSms() {
         return;
       }
 
-      setupSms(null, code);
+      setupSms(code);
     });
 
   $("#tf_send_sms_cancel")
     .off("click")
-    .on("click", function () {
+    .on("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+
       closeCollapse("tf_sms");
       clearEventSetupSms();
     });
@@ -313,16 +315,19 @@ function clearEventSetupSms() {
 
   $("#tf_send_sms_setup").show();
   $("#tf_verify_sms").fadeOut();
-  $("#tf_conf_phone_number").val("");
-  $("#tf_sms_error").hide();
   $("#tf_totp_sms").val("");
 }
 
 function toggleSmsSetup() {
-  $("#tf_phone_number").val(window.tf_twofactor.sms_phone_number ?? "");
   openCollapse("tf_sms");
   const open = $("#tf_sms").data("open");
   if (open) {
+    if (!window.tf_twofactor.sms_profile_phone_available) {
+      pwgToaster({
+        text: window.tf_twofactor.sms_profile_phone_error || str_handle_error,
+        icon: "error",
+      });
+    }
     eventSetupSms();
   } else {
     clearEventSetupSms();
@@ -352,16 +357,14 @@ function resentSms() {
   timeoutBeforeSmsResent = setTimeout(resentSms, 1000);
 }
 
-function setupSms(phone = null, code = null) {
+function setupSms(code = null) {
   $("#tf_send_sms_setup").off("click");
   $("#tf_send_sms_code").off("click");
   let data = {
     pwg_token: PWG_TOKEN,
   };
 
-  if (phone) {
-    data.phone_number = phone;
-  } else if (code) {
+  if (code) {
     data.code = code;
   }
 
@@ -372,7 +375,7 @@ function setupSms(phone = null, code = null) {
     data: data,
     success: function (res) {
       if ("ok" == res.stat) {
-        if (phone) {
+        if (!code) {
           $("#tf_send_sms_setup").hide();
           $("#tf_verify_sms").show();
           eventFinalSetupSms();
@@ -388,10 +391,11 @@ function setupSms(phone = null, code = null) {
             eventFinalSetupSms();
             return;
           }
-          window.tf_twofactor.sms_phone_number = $("#tf_phone_number")
-            .val()
-            .trim();
+          window.tf_twofactor.sms_phone_number =
+            window.tf_twofactor.sms_profile_phone_normalized ||
+            window.tf_twofactor.sms_phone_number;
           window.tf_twofactor.enabled.sms = true;
+          window.tf_twofactor.sms_phone_needs_reverify = false;
           pwgToaster({
             text: window.tf_twofactor.str_sms_setup_success,
             icon: "success",

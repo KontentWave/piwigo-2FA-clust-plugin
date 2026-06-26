@@ -299,15 +299,38 @@ function tf_setup_sms($params)
     return tf_setup_generic($params, 'sms');
   }
 
-  if (empty($params['phone_number']))
+  $phone_number = null;
+  if (tf_use_cpt_profile_phone() && !tf_allow_manual_sms_phone())
+  {
+    $candidate = tf_get_sms_setup_phone_candidate((int) $user['id']);
+    if (empty($candidate['normalized_phone']))
+    {
+      return new PwgError(401, $candidate['error'] ?? l10n('Please add a valid contact phone number in My Profile first.'));
+    }
+
+    $phone_number = $candidate['normalized_phone'];
+    if (!empty($params['phone_number']))
+    {
+      $submitted_phone = tf_normalize_phone_number($params['phone_number']);
+      if ($submitted_phone !== $phone_number)
+      {
+        return new PwgError(403, l10n('The submitted phone number does not match your profile phone number.'));
+      }
+    }
+  }
+
+  if (null === $phone_number && empty($params['phone_number']))
   {
     return new PwgError(401, l10n('Please enter a valid phone number'));
   }
 
-  $phone_number = tf_normalize_phone_number($params['phone_number']);
-  if (!$phone_number)
+  if (null === $phone_number)
   {
-    return new PwgError(401, l10n('Please enter a valid phone number'));
+    $phone_number = tf_normalize_phone_number($params['phone_number']);
+    if (!$phone_number)
+    {
+      return new PwgError(401, l10n('Please enter a valid phone number'));
+    }
   }
 
   $phone_owner = tf_get_sms_phone_owner($phone_number, $user['id']);
