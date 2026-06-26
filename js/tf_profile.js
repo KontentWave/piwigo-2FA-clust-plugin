@@ -59,6 +59,7 @@ $(function () {
   }
 
   updateEnabledMessage();
+  updateSmsReverifyUi();
 
   // Modal Help ApiKey
   $(".tf-learn-more").on("click", openModalHelp);
@@ -318,6 +319,63 @@ function clearEventSetupSms() {
   $("#tf_totp_sms").val("");
 }
 
+function tfMaskPhoneForDisplay(phoneNumber) {
+  const value = `${phoneNumber || ""}`.trim();
+
+  if (value === "") {
+    return "";
+  }
+
+  if (value.length <= 4) {
+    return "*".repeat(value.length);
+  }
+
+  return (
+    value.slice(0, 3) +
+    "*".repeat(Math.max(0, value.length - 6)) +
+    value.slice(-3)
+  );
+}
+
+function updateSmsReverifyUi() {
+  if (
+    !window.tf_twofactor.enabled.sms ||
+    !window.tf_twofactor.sms_phone_needs_reverify
+  ) {
+    $(
+      "#tf_sms_reverify_warning_top, #tf_sms_reverify_warning_inner, #tf_sms_verified_phone_top, #tf_sms_profile_phone_top, #tf_sms_verified_phone_inner",
+    ).hide();
+    return;
+  }
+
+  const verifiedMasked = tfMaskPhoneForDisplay(
+    window.tf_twofactor.sms_phone_number,
+  );
+  const profileMasked = tfMaskPhoneForDisplay(
+    window.tf_twofactor.sms_profile_phone_normalized,
+  );
+
+  $("#tf_sms_reverify_warning_top, #tf_sms_reverify_warning_inner").show();
+
+  if (verifiedMasked) {
+    const verifiedText = sprintf(
+      window.tf_twofactor.str_verified_sms_phone,
+      verifiedMasked,
+    );
+    $("#tf_sms_verified_phone_top, #tf_sms_verified_phone_inner")
+      .text(verifiedText)
+      .show();
+  }
+
+  if (profileMasked) {
+    const profileText = sprintf(
+      window.tf_twofactor.str_current_profile_phone,
+      profileMasked,
+    );
+    $("#tf_sms_profile_phone_top").text(profileText).show();
+  }
+}
+
 function toggleSmsSetup() {
   openCollapse("tf_sms");
   const open = $("#tf_sms").data("open");
@@ -402,6 +460,7 @@ function setupSms(code = null) {
           });
           closeCollapse("tf_sms");
           updateEnabledMessage();
+          updateSmsReverifyUi();
           eventSmsAlreadySetup();
         }
         return;
@@ -635,6 +694,23 @@ function closeModal() {
 }
 
 function deactivateTf(method) {
+  const enabledMethodsCount = [
+    window.tf_twofactor.enabled.email,
+    window.tf_twofactor.enabled.sms,
+    window.tf_twofactor.enabled.external_app,
+  ].filter(Boolean).length;
+
+  if (
+    window.tf_twofactor.owner_two_factor_required &&
+    enabledMethodsCount <= 1
+  ) {
+    pwgToaster({
+      text: window.tf_twofactor.str_album_owner_2fa_required,
+      icon: "error",
+    });
+    return;
+  }
+
   $("#tf_save_modal").data("modal", method);
 
   if (method == "email") {
@@ -672,6 +748,7 @@ function sendDeactivateTf(method) {
         } else if (method == "sms") {
           window.tf_twofactor.enabled.sms = false;
           window.tf_twofactor.sms_phone_number = "";
+          window.tf_twofactor.sms_phone_needs_reverify = false;
           $("#tf_sms_setting").hide().off("click");
           $("#tf_sms").off("click").on("change", toggleSmsSetup);
         } else {
@@ -690,6 +767,7 @@ function sendDeactivateTf(method) {
           icon: "success",
         });
         updateEnabledMessage();
+        updateSmsReverifyUi();
         return;
       }
       pwgToaster({ text: str_handle_error, icon: "error" });

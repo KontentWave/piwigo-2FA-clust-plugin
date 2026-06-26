@@ -60,6 +60,15 @@ Implementation notes:
 - Upgraded installs self-heal the `phone_number` column at runtime if the normal plugin update hook did not run.
 - The plugin version header stays aligned with the upstream published revision to avoid false compatibility warnings in Piwigo administration.
 
+Implemented extension after Phase 1:
+
+- SMS setup now reads the candidate phone from CPT `contact_number` by default.
+- Manual phone-entry fields were removed from the 2FA block.
+- The profile UI shows masked verified-vs-current CPT phone warnings when re-verification is needed and refreshes that display after successful SMS verification.
+- Non-admin album owners are redirected to profile setup when they own albums but have no configured 2FA method.
+- Non-admin album owners cannot disable their last remaining 2FA method while they still own albums.
+- Once a non-admin user no longer owns albums, the plugin removes their stored 2FA methods on a later authenticated request.
+
 ### Non-goals
 
 - Weekly liveness guard scheduling.

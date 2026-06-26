@@ -58,6 +58,7 @@ define('TF_SESSION_SMS_SENT_AT', 'tf_sms_sent_at');
 define('TF_SESSION_SMS_PHONE_NUMBER', 'tf_sms_phone_number');
 define('TF_SESSION_SMS_SETUP_RATE_LIMIT', 'tf_sms_setup_rate_limit');
 define('TF_SESSION_SMS_VERIFY_RATE_LIMIT', 'tf_sms_verify_rate_limit');
+define('TF_SESSION_SETUP_REQUIRED', 'tf_setup_required');
 
 // +-----------------------------------------------------------------------+
 // | Init Two Factor                                                       |
@@ -116,5 +117,18 @@ function tf_init()
     // and always redirect to identification.php?tf
     $user['status'] = 'guest';
     tf_redirect();
+  }
+
+  if (!is_a_guest())
+  {
+    $policy = tf_sync_album_owner_two_factor_policy((int) $user['id']);
+    if (!empty($policy['requires_setup']) && !defined('IN_WS'))
+    {
+      $script_name = basename($_SERVER['SCRIPT_NAME'] ?? '');
+      if (!in_array($script_name, array('profile.php', 'identification.php'), true))
+      {
+        redirect(tf_get_profile_url() . '?twofactor_required=1');
+      }
+    }
   }
 }

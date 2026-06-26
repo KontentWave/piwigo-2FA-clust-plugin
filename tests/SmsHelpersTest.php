@@ -2,6 +2,72 @@
 
 use PHPUnit\Framework\TestCase;
 
+if (!class_exists('PwgTwoFactor')) {
+  class PwgTwoFactor
+  {
+    public static $allowed_methods = array('email', 'sms', 'external_app');
+    public static $enabled_methods = array();
+    public static $deleted_methods = array();
+
+    private $method;
+
+    public function __construct($method)
+    {
+      $this->method = $method;
+    }
+
+    public static function isEnabled($user_id, $method = null)
+    {
+      $user_id = (int) $user_id;
+      $methods = self::$enabled_methods[$user_id] ?? array();
+      if (null === $method) {
+        return !empty($methods);
+      }
+
+      return in_array($method, $methods, true);
+    }
+
+    public function deleteSecret($user_id = null)
+    {
+      $user_id = (int) $user_id;
+      self::$deleted_methods[] = array($user_id, $this->method);
+      if (!isset(self::$enabled_methods[$user_id])) {
+        return true;
+      }
+
+      self::$enabled_methods[$user_id] = array_values(array_filter(
+        self::$enabled_methods[$user_id],
+        function ($method) {
+          return $method !== $this->method;
+        }
+      ));
+
+      return true;
+    }
+  }
+}
+
+if (!function_exists('cpt_count_albums_owned_by')) {
+  function cpt_count_albums_owned_by($user_id)
+  {
+    return $GLOBALS['tf_test_owned_album_count'][$user_id] ?? 0;
+  }
+}
+
+if (!function_exists('is_webmaster')) {
+  function is_webmaster()
+  {
+    return !empty($GLOBALS['tf_test_is_webmaster']);
+  }
+}
+
+if (!function_exists('is_admin')) {
+  function is_admin()
+  {
+    return !empty($GLOBALS['tf_test_is_admin']);
+  }
+}
+
 class SmsHelpersTest extends TestCase
 {
   protected function setUp(): void
@@ -13,6 +79,15 @@ class SmsHelpersTest extends TestCase
       'gallery_title' => 'Test Gallery',
       'two_factor' => tf_get_default_conf(),
     );
+
+    global $user;
+    $user = array('id' => 7);
+
+    PwgTwoFactor::$enabled_methods = array();
+    PwgTwoFactor::$deleted_methods = array();
+    $GLOBALS['tf_test_owned_album_count'] = array();
+    $GLOBALS['tf_test_is_webmaster'] = false;
+    $GLOBALS['tf_test_is_admin'] = false;
   }
 
   public function testNormalizePhoneNumberAcceptsE164AndFormattedInput(): void
@@ -131,5 +206,106 @@ class SmsHelpersTest extends TestCase
 
     $this->assertFalse($candidate['available']);
     $this->assertNull($candidate['error']);
+  }
+
+  public function testSmsPhoneNeedsReverifyReturnsFalseForInvalidVerifiedPhone(): void
+  {
+    $this->assertFalse(tf_sms_phone_needs_reverify(7, 'bad-phone'));
+  }
+
+  public function testSmsPhoneNeedsReverifyReturnsFalseWhenCptCandidateUnavailable(): void
+  {
+    $this->assertFalse(tf_sms_phone_needs_reverify(7, '+421905000000'));
+  }
+
+  public function testSmsPhoneNeedsReverifyReturnsTrueWhenCptPhoneDiffers(): void
+  {
+    global $conf;
+    $conf['two_factor']['sms']['use_cpt_profile_phone'] = true;
+
+    if (!function_exists('cpt_owner_profile_table_exists')) {
+      function cpt_owner_profile_table_exists() {
+        return true;
+      }
+    }
+
+    if (!function_exists('cpt_get_effective_owner_root_album_id_for_user')) {
+      function cpt_get_effective_owner_root_album_id_for_user($user_id) {
+        return 10;
+      }
+    }
+
+    if (!function_exists('cpt_fetch_owner_profile_rows')) {
+      function cpt_fetch_owner_profile_rows($root_album_id, $owner_user_id) {
+        return array(
+          'contact_number' => array('value_text' => '+421905111111', 'tag_id' => null),
+          'contact_sms' => array('value_text' => null, 'tag_id' => 1),
+        );
+      }
+    }
+
+    $this->assertTrue(tf_sms_phone_needs_reverify(7, '+421905000000'));
+    $this->assertFalse(tf_sms_phone_needs_reverify(7, '+421905111111'));
+  }
+
+  public function testCountEnabledTwoFactorMethodsCountsConfiguredMethods(): void
+  {
+    PwgTwoFactor::$enabled_methods[7] = array('email', 'sms');
+
+    $this->assertSame(2, tf_count_enabled_two_factor_methods(7));
+  }
+
+  public function testAlbumOwnerPolicyRequiresSetupWithoutEnabledMethod(): void
+  {
+    $GLOBALS['tf_test_owned_album_count'][7] = 2;
+
+    $policy = tf_sync_album_owner_two_factor_policy(7);
+
+    $this->assertTrue($policy['required']);
+    $this->assertTrue($policy['requires_setup']);
+    $this->assertSame(7, $_SESSION[TF_SESSION_SETUP_REQUIRED]);
+  }
+
+  public function testAlbumOwnerPolicyClearsSetupFlagWhenMethodEnabled(): void
+  {
+    $GLOBALS['tf_test_owned_album_count'][7] = 1;
+    PwgTwoFactor::$enabled_methods[7] = array('sms');
+    $_SESSION[TF_SESSION_SETUP_REQUIRED] = 7;
+
+    $policy = tf_sync_album_owner_two_factor_policy(7);
+
+    $this->assertTrue($policy['required']);
+    $this->assertFalse($policy['requires_setup']);
+    $this->assertArrayNotHasKey(TF_SESSION_SETUP_REQUIRED, $_SESSION);
+  }
+
+  public function testAlbumOwnerPolicyDeletesMethodsAfterAlbumOwnershipEnds(): void
+  {
+    $GLOBALS['tf_test_owned_album_count'][7] = 0;
+    PwgTwoFactor::$enabled_methods[7] = array('email', 'sms');
+    $_SESSION[TF_SESSION_SETUP_REQUIRED] = 7;
+
+    $policy = tf_sync_album_owner_two_factor_policy(7);
+
+    $this->assertFalse($policy['required']);
+    $this->assertFalse($policy['has_enabled']);
+    $this->assertSame(array(array(7, 'email'), array(7, 'sms')), PwgTwoFactor::$deleted_methods);
+    $this->assertArrayNotHasKey(TF_SESSION_SETUP_REQUIRED, $_SESSION);
+  }
+
+  public function testAlbumOwnerPolicyExemptsAdmins(): void
+  {
+    global $user;
+
+    $user['id'] = 7;
+    $GLOBALS['tf_test_owned_album_count'][7] = 3;
+    $GLOBALS['tf_test_is_admin'] = true;
+    PwgTwoFactor::$enabled_methods[7] = array('email');
+
+    $policy = tf_sync_album_owner_two_factor_policy(7);
+
+    $this->assertFalse($policy['required']);
+    $this->assertTrue($policy['has_enabled']);
+    $this->assertSame(array(), PwgTwoFactor::$deleted_methods);
   }
 }

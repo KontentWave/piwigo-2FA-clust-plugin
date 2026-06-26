@@ -19,6 +19,7 @@ if (!defined('TF_SESSION_MAIL_SETUP_RATE_LIMIT')) define('TF_SESSION_MAIL_SETUP_
 if (!defined('TF_SESSION_MAIL_VERIFY_RATE_LIMIT')) define('TF_SESSION_MAIL_VERIFY_RATE_LIMIT', 'tf_mail_verify_rate_limit');
 if (!defined('TF_SESSION_SMS_SETUP_RATE_LIMIT')) define('TF_SESSION_SMS_SETUP_RATE_LIMIT', 'tf_sms_setup_rate_limit');
 if (!defined('TF_SESSION_SMS_VERIFY_RATE_LIMIT')) define('TF_SESSION_SMS_VERIFY_RATE_LIMIT', 'tf_sms_verify_rate_limit');
+if (!defined('TF_SESSION_SETUP_REQUIRED')) define('TF_SESSION_SETUP_REQUIRED', 'tf_setup_required');
 if (!defined('TF_TABLE')) define('TF_TABLE', 'piwigo_two_factor');
 if (!defined('USER_INFOS_TABLE')) define('USER_INFOS_TABLE', 'piwigo_user_infos');
 

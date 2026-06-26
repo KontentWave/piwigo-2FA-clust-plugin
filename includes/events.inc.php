@@ -19,18 +19,26 @@ function tf_add_profile_block()
     $template->append('PLUGINS_PROFILE', $block);
 
     $sms_phone_number = '';
+    $album_owner_policy = tf_sync_album_owner_two_factor_policy((int) $user['id']);
     $sms_profile_phone = tf_get_sms_setup_phone_candidate((int) $user['id']);
     $sms_phone_needs_reverify = false;
-    if (PwgTwoFactor::isEnabled($user['id'], 'sms'))
+    $sms_verified_phone_masked = '';
+    $has_external_app = PwgTwoFactor::isEnabled($user['id'], 'external_app');
+    $has_email = PwgTwoFactor::isEnabled($user['id'], 'email');
+    $has_sms = PwgTwoFactor::isEnabled($user['id'], 'sms');
+    if ($has_sms)
     {
       $sms_phone_number = (new PwgTwoFactor('sms'))->getPhoneNumber() ?: '';
+      $sms_verified_phone_masked = $sms_phone_number ? tf_mask_phone_number($sms_phone_number) : '';
       $sms_phone_needs_reverify = tf_sms_phone_needs_reverify((int) $user['id'], $sms_phone_number);
     }
 
     $template->assign(array(
-      'TF_STATUS_EXTERNAL_APP' => boolean_to_string(PwgTwoFactor::isEnabled($user['id'], 'external_app')),
-      'TF_STATUS_EMAIL' => boolean_to_string(PwgTwoFactor::isEnabled($user['id'], 'email')),
-      'TF_STATUS_SMS' => boolean_to_string(PwgTwoFactor::isEnabled($user['id'], 'sms')),
+      'TF_STATUS_EXTERNAL_APP' => boolean_to_string($has_external_app),
+      'TF_STATUS_EMAIL' => boolean_to_string($has_email),
+      'TF_STATUS_SMS' => boolean_to_string($has_sms),
+      'TF_ALBUM_OWNER_TWO_FACTOR_REQUIRED' => !empty($album_owner_policy['required']),
+      'TF_ALBUM_OWNER_TWO_FACTOR_SETUP_REQUIRED' => !empty($album_owner_policy['requires_setup']),
       'TF_SMS_PHONE_NUMBER' => $sms_phone_number,
       'TF_SMS_PROFILE_PHONE_NUMBER' => $sms_profile_phone['raw_phone'] ?? '',
       'TF_SMS_PROFILE_PHONE_NORMALIZED' => $sms_profile_phone['normalized_phone'] ?? '',
@@ -38,6 +46,7 @@ function tf_add_profile_block()
       'TF_SMS_PROFILE_PHONE_AVAILABLE' => !empty($sms_profile_phone['available']),
       'TF_SMS_PROFILE_PHONE_SOURCE' => $sms_profile_phone['source'] ?? '',
       'TF_SMS_PROFILE_PHONE_ERROR' => $sms_profile_phone['error'] ?? '',
+      'TF_SMS_VERIFIED_PHONE_MASKED' => $sms_verified_phone_masked,
       'TF_SMS_PHONE_NEEDS_REVERIFY' => $sms_phone_needs_reverify,
       'TF_CONFIG' => $conf['two_factor'],
       'TF_DOCLINK' => 'fr_FR' === $user['language'] 
@@ -81,6 +90,10 @@ function tf_try_log_user($success, $username, $password, $remember_me)
   $has_external_app = PwgTwoFactor::isActivated('external_app') && PwgTwoFactor::isEnabled($user['id'], 'external_app');
   $has_email = PwgTwoFactor::isActivated('email') && PwgTwoFactor::isEnabled($user['id'], 'email');
   $has_sms = PwgTwoFactor::isActivated('sms') && PwgTwoFactor::isEnabled($user['id'], 'sms');
+  if (tf_is_album_owner_two_factor_required((int) $user['id']) && !$has_external_app && !$has_email && !$has_sms)
+  {
+    $_SESSION[TF_SESSION_SETUP_REQUIRED] = (int) $user['id'];
+  }
   
   if ($has_external_app || $has_email || $has_sms)
   {

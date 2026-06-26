@@ -387,12 +387,11 @@ Phase 1 MVP outcome:
 - Initial automated PHPUnit and Cypress coverage is now in place.
 - Full test-plan completion remains pending for login, lockout, resend, deactivation, and provider-integrated scenarios.
 
-
 # Two Factor SMS `project_sheet.md` Extension: CPT Profile Phone Source
 
 ## Phase 2: Draw SMS Verification Phone From CPT Owner Profile
 
-Status: planned documentation extension.
+Status: implemented slice, with album-owner enforcement added.
 
 ### `Action`
 
@@ -531,16 +530,39 @@ When CPT `contact_number` differs from the verified Two Factor `phone_number`:
 3. Do not send liveness/PLG SMS to the new CPT phone until OTP verification succeeds.
 ```
 
-MVP option:
+Implemented now:
 
 ```text
-Show warning only and let the owner deactivate/reactivate SMS.
+Show warning, keep login using the previously verified SMS phone,
+and refresh the profile warning text after successful re-verification.
 ```
 
 Better follow-up option:
 
 ```text
-Add an explicit "Verify updated profile phone" flow.
+Add an explicit "Verify updated profile phone" flow without using deactivate/reactivate as the re-verification trigger.
+```
+
+---
+
+## Album Owner 2FA Policy
+
+An additional business rule is now enforced for non-admin album owners:
+
+```text
+- if a non-admin user owns albums, 2FA is required
+- if they do not own albums anymore, their configured 2FA methods are removed automatically
+- admins and webmasters are exempt from this policy
+```
+
+Implemented behavior:
+
+```text
+1. CPT ownership count is used as the policy input.
+2. If the owner has albums but no configured 2FA method, the plugin redirects them to Profile until they set one up.
+3. If the owner already has multiple methods, they may disable one method as long as at least one method remains enabled.
+4. If they try to disable their last enabled method while still owning albums, the request is rejected in both UI and server-side WS handling.
+5. If ownership drops to zero albums, the plugin removes the stored 2FA methods for that non-admin user on the next authenticated request.
 ```
 
 ---
@@ -754,13 +776,14 @@ Phone number from My Profile
 Confirm this phone number
 ```
 
-Recommended MVP behavior:
+Implemented Phase 2 behavior:
 
 ```text
-- The main phone input is prefilled from CPT and readonly.
-- The owner must retype the same number in the confirmation input.
+- The 2FA block no longer exposes manual phone-entry fields.
+- The CPT contact phone is shown as a readonly source field.
 - If no valid CPT phone exists, show a message: "Add your contact phone in My Profile first."
 - The Send SMS button is disabled until a valid CPT phone is available.
+- If the verified SMS phone differs from CPT, show both masked values and require re-verification.
 ```
 
 Suggested Smarty variables:
@@ -788,15 +811,15 @@ should remain available, but it should represent the verified Two Factor phone w
 
 ## JavaScript Changes
 
-Current `setupSms(phone, code)` sends the visible input value as `phone_number`.
+Current `setupSms(code)` finalizes verification without re-entering a phone number.
 
 Phase 2 behavior:
 
 ```text
-- Keep sending `phone_number` for backward compatibility.
-- Populate it from the readonly CPT phone source.
-- Do not allow owner-edited arbitrary phone values in CPT-phone mode.
-- Still keep the confirmation check to reduce accidental verification of the wrong displayed number.
+- Start setup without accepting an owner-edited phone value.
+- Re-read CPT server-side when sending the setup SMS.
+- Finalize setup using only the OTP code.
+- Refresh the stale-phone warning block in place after successful re-verification so the masked verified phone display is current without a page reload.
 ```
 
 If `TF_SMS_PROFILE_PHONE_AVAILABLE` is false:
@@ -816,10 +839,10 @@ If `TF_SMS_PROFILE_PHONE_AVAILABLE` is false:
 2. Two Factor profile block reads CPT contact_number.
 3. Owner opens SMS setup.
 4. Two Factor displays CPT phone as readonly source.
-5. Owner confirms the displayed phone.
-6. Two Factor sends OTP to the CPT phone.
-7. Owner enters OTP.
-8. Two Factor saves normalized phone_number to TF_TABLE on method = sms.
+5. Two Factor sends OTP to the CPT phone.
+6. Owner enters OTP.
+7. Two Factor saves normalized phone_number to TF_TABLE on method = sms.
+8. The profile UI clears the stale-phone warning after successful re-verification.
 9. PLG later uses verified TF_TABLE phone, not raw CPT phone.
 ```
 
@@ -833,6 +856,7 @@ If `TF_SMS_PROFILE_PHONE_AVAILABLE` is false:
 - Do not use `contact_phone`, `contact_sms`, or `contact_whatsapp` as phone numbers.
 - Do not send PLG/liveness SMS to an unverified CPT value.
 - Do not silently overwrite the verified Two Factor phone when CPT profile phone changes.
+- Do not allow a non-admin album owner to disable their last enabled 2FA method.
 - Keep API key server-only.
 - Log phone values only masked.
 - Reject malformed phone values before calling SMSTOOLS.
@@ -860,11 +884,13 @@ If `TF_SMS_PROFILE_PHONE_AVAILABLE` is false:
 
 1. Owner sees SMS setup phone prefilled from CPT My Profile.
 2. Owner cannot edit the source phone inside the 2FA block when CPT-phone mode is enabled.
-3. Owner must confirm the displayed phone before SMS is sent.
+3. Owner cannot manually replace the displayed CPT phone inside the 2FA block.
 4. Owner without a CPT contact number sees a clear instruction to update My Profile first.
 5. Owner changes CPT contact number and 2FA shows that SMS verification needs to be refreshed.
-6. Owner completes SMS verification and PLG shows the verified masked phone.
+6. Owner completes SMS verification and the masked verified-phone display updates without a page reload.
 7. Crafted request with a different phone number is rejected server-side.
+8. Album owner cannot disable their last remaining 2FA method.
+9. Album owner with no configured 2FA method is redirected to Profile setup after login.
 
 ---
 
@@ -877,4 +903,6 @@ If `TF_SMS_PROFILE_PHONE_AVAILABLE` is false:
 - PLG continues to use the verified Two Factor phone for liveness checks.
 - CPT channel flags are interpreted as flags only, not as phone-number values.
 - Missing or invalid CPT phone fails closed with a clear owner-facing message.
-- Tests cover successful setup, missing phone, mismatched phone, stale verified phone, and flag interpretation.
+- Non-admin album owners must keep at least one 2FA method enabled while they own albums.
+- Album-owner policy is enforced in both the profile UI and the deactivation WS handler.
+- Tests cover successful setup, missing phone, mismatched phone, stale verified phone, flag interpretation, and album-owner policy helpers.

@@ -22,6 +22,9 @@ window.tf_twofactor = {
   str_deactivate_email_success: "{"Two-factor authentication by email has been successfully deactivated"|translate|escape:javascript}",
   str_deactivate_sms_success: "{"Two-factor authentication by SMS has been successfully deactivated"|translate|escape:javascript}",
   str_deactivate_external_success: "{"Two-factor authentication by application has been successfully deactivated"|translate|escape:javascript}",
+  str_album_owner_2fa_required: "{"Two-factor authentication is required while you own albums. Set up or keep at least one method enabled."|translate|escape:javascript}",
+  str_verified_sms_phone: "{"Verified SMS phone: %s"|translate|escape:javascript}",
+  str_current_profile_phone: "{"Current My Profile phone: %s"|translate|escape:javascript}",
   sms_phone_number: "{$TF_SMS_PHONE_NUMBER|escape:javascript}",
   sms_profile_phone_number: "{$TF_SMS_PROFILE_PHONE_NUMBER|escape:javascript}",
   sms_profile_phone_normalized: "{$TF_SMS_PROFILE_PHONE_NORMALIZED|escape:javascript}",
@@ -29,6 +32,8 @@ window.tf_twofactor = {
   sms_profile_phone_error: "{$TF_SMS_PROFILE_PHONE_ERROR|escape:javascript}",
   sms_phone_needs_reverify: {if $TF_SMS_PHONE_NEEDS_REVERIFY}true{else}false{/if},
   sms_resend_delay: {$TF_CONFIG.sms.resend_delay|intval},
+  owner_two_factor_required: {if $TF_ALBUM_OWNER_TWO_FACTOR_REQUIRED}true{else}false{/if},
+  owner_two_factor_setup_required: {if $TF_ALBUM_OWNER_TWO_FACTOR_SETUP_REQUIRED}true{else}false{/if},
 
   enabled: {
     external_app: {$TF_STATUS_EXTERNAL_APP},
@@ -38,6 +43,16 @@ window.tf_twofactor = {
 };
 {/footer_script}
 <div class="column-flex tf-container" data-tf_id="{$k_block}" id="tf_container">
+  {if $TF_ALBUM_OWNER_TWO_FACTOR_REQUIRED}
+  <div class="infos-message">
+    {if $TF_ALBUM_OWNER_TWO_FACTOR_SETUP_REQUIRED}
+    {'Two-factor authentication is required before album owners can continue using their account. Set up one method below.'|translate}
+    {else}
+    {'Two-factor authentication is required while you own albums. Set up or keep at least one method enabled.'|translate}
+    {/if}
+  </div>
+  {/if}
+
   {if true === $TF_CONFIG.external_app.enabled}
   <div class="tf-setup">
     <label class="switch tf-switch">
@@ -201,6 +216,15 @@ window.tf_twofactor = {
         <p class="tf-setup-subtitle">{'We will send you the authentication code by SMS.'|translate|escape:html}</p>
       </label>
 
+      {if $TF_STATUS_SMS && $TF_SMS_PHONE_NEEDS_REVERIFY}
+      <p class="error-message" id="tf_sms_reverify_warning_top" style="display:block"><i class="gallery-icon-attention-circled"></i>
+        {'Your verified SMS phone no longer matches the contact phone in My Profile. Deactivate and re-enable SMS to verify the updated number.'|translate}</p>
+      <p class="tf-setup-subtitle" id="tf_sms_verified_phone_top">{'Verified SMS phone: %s'|translate:$TF_SMS_VERIFIED_PHONE_MASKED|escape:html}</p>
+      {if $TF_SMS_PROFILE_PHONE_MASKED}
+      <p class="tf-setup-subtitle" id="tf_sms_profile_phone_top">{'Current My Profile phone: %s'|translate:$TF_SMS_PROFILE_PHONE_MASKED|escape:html}</p>
+      {/if}
+      {/if}
+
       <div class="tf-collapse close" id="tf_sms_setup">
         {if $TF_SMS_PROFILE_PHONE_AVAILABLE}
         <div class="column-flex">
@@ -217,8 +241,9 @@ window.tf_twofactor = {
         {/if}
 
         {if $TF_SMS_PHONE_NEEDS_REVERIFY}
-        <p class="error-message" style="display:block"><i class="gallery-icon-attention-circled"></i>
+        <p class="error-message" id="tf_sms_reverify_warning_inner" style="display:block"><i class="gallery-icon-attention-circled"></i>
           {'Your verified SMS phone no longer matches the contact phone in My Profile. Deactivate and re-enable SMS to verify the updated number.'|translate}</p>
+        <p class="tf-setup-subtitle" id="tf_sms_verified_phone_inner">{'Verified SMS phone: %s'|translate:$TF_SMS_VERIFIED_PHONE_MASKED|escape:html}</p>
         {/if}
 
         <div class="save">

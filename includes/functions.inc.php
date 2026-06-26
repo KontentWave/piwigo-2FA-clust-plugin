@@ -386,6 +386,151 @@ function tf_sms_phone_needs_reverify($user_id, $verified_phone)
 }
 
 /**
+ * `Two Factor` : profile URL
+ */
+function tf_get_profile_url()
+{
+  return get_root_url() . 'profile.php';
+}
+
+/**
+ * `Two Factor` : whether current user is exempt from album-owner 2FA policy
+ */
+function tf_is_two_factor_policy_exempt_user($user_id)
+{
+  global $user;
+
+  $user_id = (int) $user_id;
+  if ($user_id <= 0)
+  {
+    return true;
+  }
+
+  if (!empty($user['id']) && (int) $user['id'] === $user_id)
+  {
+    if (function_exists('is_webmaster') && is_webmaster())
+    {
+      return true;
+    }
+
+    if (function_exists('is_admin') && is_admin())
+    {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * `Two Factor` : whether album ownership makes 2FA mandatory for this user
+ */
+function tf_is_album_owner_two_factor_required($user_id)
+{
+  $user_id = (int) $user_id;
+  if ($user_id <= 0 || tf_is_two_factor_policy_exempt_user($user_id))
+  {
+    return false;
+  }
+
+  if (!function_exists('cpt_count_albums_owned_by'))
+  {
+    return false;
+  }
+
+  return cpt_count_albums_owned_by($user_id) > 0;
+}
+
+/**
+ * `Two Factor` : whether user has any configured 2FA method
+ */
+function tf_user_has_enabled_two_factor($user_id)
+{
+  foreach (PwgTwoFactor::$allowed_methods as $method)
+  {
+    if (PwgTwoFactor::isEnabled($user_id, $method))
+    {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * `Two Factor` : count configured 2FA methods for a user
+ */
+function tf_count_enabled_two_factor_methods($user_id)
+{
+  $count = 0;
+
+  foreach (PwgTwoFactor::$allowed_methods as $method)
+  {
+    if (PwgTwoFactor::isEnabled($user_id, $method))
+    {
+      $count++;
+    }
+  }
+
+  return $count;
+}
+
+/**
+ * `Two Factor` : delete all configured 2FA methods for a user
+ */
+function tf_delete_all_user_two_factor_methods($user_id)
+{
+  foreach (PwgTwoFactor::$allowed_methods as $method)
+  {
+    if (PwgTwoFactor::isEnabled($user_id, $method))
+    {
+      (new PwgTwoFactor($method))->deleteSecret($user_id);
+    }
+  }
+}
+
+/**
+ * `Two Factor` : synchronize album-owner policy with current user state
+ */
+function tf_sync_album_owner_two_factor_policy($user_id)
+{
+  $user_id = (int) $user_id;
+  $required = tf_is_album_owner_two_factor_required($user_id);
+  $has_enabled = $user_id > 0 ? tf_user_has_enabled_two_factor($user_id) : false;
+
+  if (!$required)
+  {
+    unset($_SESSION[TF_SESSION_SETUP_REQUIRED]);
+    if ($has_enabled && !tf_is_two_factor_policy_exempt_user($user_id))
+    {
+      tf_delete_all_user_two_factor_methods($user_id);
+      $has_enabled = false;
+    }
+
+    return array(
+      'required' => false,
+      'has_enabled' => $has_enabled,
+      'requires_setup' => false,
+    );
+  }
+
+  if (!$has_enabled)
+  {
+    $_SESSION[TF_SESSION_SETUP_REQUIRED] = $user_id;
+  }
+  else if (isset($_SESSION[TF_SESSION_SETUP_REQUIRED]) && (int) $_SESSION[TF_SESSION_SETUP_REQUIRED] === $user_id)
+  {
+    unset($_SESSION[TF_SESSION_SETUP_REQUIRED]);
+  }
+
+  return array(
+    'required' => true,
+    'has_enabled' => $has_enabled,
+    'requires_setup' => !$has_enabled,
+  );
+}
+
+/**
  * `Two Factor` : ensure SMS schema additions exist on upgraded installs
  */
 function tf_ensure_sms_schema()

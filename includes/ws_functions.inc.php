@@ -608,6 +608,15 @@ function tf_deactivate($params)
 
   $user_id = $user['id'];
 
+  if (
+    tf_is_album_owner_two_factor_required((int) $user_id)
+    && PwgTwoFactor::isEnabled($user_id, $params['two_factor_method'])
+    && tf_count_enabled_two_factor_methods((int) $user_id) <= 1
+  )
+  {
+    return new PwgError(403, l10n('Two-factor authentication is required while you own albums. Set up or keep at least one method enabled.'));
+  }
+
   if (PwgTwoFactor::isEnabled($user_id, $params['two_factor_method']))
   {
     (new PwgTwoFactor($params['two_factor_method']))->deleteSecret(pwg_db_real_escape_string($user_id));
