@@ -65,9 +65,12 @@ Implemented extension after Phase 1:
 - SMS setup now reads the candidate phone from CPT `contact_number` by default.
 - Manual phone-entry fields were removed from the 2FA block.
 - The profile UI shows masked verified-vs-current CPT phone warnings when re-verification is needed and refreshes that display after successful SMS verification.
+- The verified SMS phone foundation is preserved on the `sms` row even when native SMS login enrollment is later disabled.
+- Native SMS login challenge is now driven by SMS enrollment state (`enabled_at IS NOT NULL`), not by the mere existence of a stored verified phone.
 - Non-admin album owners are redirected to profile setup when they own at least one owned album with images but have no configured 2FA method.
 - Non-admin album owners cannot disable their last remaining 2FA method while they still own at least one album with images.
 - Once a non-admin user no longer owns any owned album with images, the plugin removes their stored 2FA methods on a later authenticated request.
+- When PLG already manages an eligible owner via a persisted liveness record, native owner-policy setup enforcement and native SMS login challenge are suppressed for that user.
 
 ### Non-goals
 
@@ -96,6 +99,10 @@ Expose safe helper functions or webservice methods that the Profile Liveness Gua
 Current gap:
 
 - Phase 1 exposes `tf_send_sms_message(...)` internally and returns `batch_id` / `msg_id` from the provider call, but it does not yet provide the documented PLG-facing helper abstraction.
+
+Current integration note:
+
+- PLG can already consume `tf_get_verified_sms_phone($user_id)` as the trusted phone source and `tf_disable_sms_login_enrollment($user_id)` to stop native login-time SMS without deleting the verified-phone row.
 
 ---
 

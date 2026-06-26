@@ -65,6 +65,7 @@ if (!function_exists('pwg_query')) {
   function pwg_query($query)
   {
     $GLOBALS['tf_test_last_query'] = $query;
+    $GLOBALS['tf_test_query_history'][] = $query;
     return $query;
   }
 }
@@ -72,6 +73,10 @@ if (!function_exists('pwg_query')) {
 if (!function_exists('pwg_db_fetch_row')) {
   function pwg_db_fetch_row($result)
   {
+    if (array_key_exists('tf_test_fetch_row_result', $GLOBALS) && null !== $GLOBALS['tf_test_fetch_row_result']) {
+      return $GLOBALS['tf_test_fetch_row_result'];
+    }
+
     return array($GLOBALS['tf_test_image_membership_count'] ?? 0);
   }
 }
@@ -104,6 +109,20 @@ if (!function_exists('is_admin')) {
   }
 }
 
+if (!function_exists('profile_liveness_guard_is_eligible_user')) {
+  function profile_liveness_guard_is_eligible_user($user_id)
+  {
+    return !empty($GLOBALS['tf_test_plg_is_eligible'][$user_id]);
+  }
+}
+
+if (!function_exists('profile_liveness_guard_get_record')) {
+  function profile_liveness_guard_get_record($user_id, $root_category_id = null)
+  {
+    return $GLOBALS['tf_test_plg_records'][$user_id] ?? null;
+  }
+}
+
 class SmsHelpersTest extends TestCase
 {
   protected function setUp(): void
@@ -125,9 +144,13 @@ class SmsHelpersTest extends TestCase
     $GLOBALS['tf_test_owned_albums'] = array();
     $GLOBALS['tf_test_image_membership_count'] = 0;
     $GLOBALS['tf_test_last_query'] = null;
+    $GLOBALS['tf_test_query_history'] = array();
+    $GLOBALS['tf_test_fetch_row_result'] = null;
     $GLOBALS['tf_test_fetch_assoc_result'] = null;
     $GLOBALS['tf_test_is_webmaster'] = false;
     $GLOBALS['tf_test_is_admin'] = false;
+    $GLOBALS['tf_test_plg_is_eligible'] = array();
+    $GLOBALS['tf_test_plg_records'] = array();
   }
 
   public function testNormalizePhoneNumberAcceptsE164AndFormattedInput(): void
@@ -314,6 +337,42 @@ class SmsHelpersTest extends TestCase
     $this->assertNull(tf_get_verified_sms_phone(0));
   }
 
+  public function testSmsLoginEnrollmentHelperChecksEnabledAt(): void
+  {
+    $GLOBALS['tf_test_fetch_row_result'] = array(1);
+
+    $this->assertTrue(tf_is_sms_login_enrollment_enabled(7));
+    $this->assertStringContainsString('enabled_at IS NOT NULL', (string) $GLOBALS['tf_test_last_query']);
+  }
+
+  public function testDisableSmsLoginEnrollmentKeepsVerifiedPhoneFoundation(): void
+  {
+    $GLOBALS['tf_test_fetch_row_result'] = array(0);
+
+    $this->assertTrue(tf_disable_sms_login_enrollment(7));
+    $this->assertCount(2, $GLOBALS['tf_test_query_history']);
+    $this->assertStringContainsString('SET enabled_at = NULL', (string) $GLOBALS['tf_test_query_history'][0]);
+    $this->assertStringContainsString('enabled_at IS NOT NULL', (string) $GLOBALS['tf_test_query_history'][1]);
+  }
+
+  public function testSmsLoginChallengeIsRequiredWithoutPlgManagement(): void
+  {
+    $GLOBALS['tf_test_fetch_row_result'] = array(1);
+
+    $this->assertTrue(tf_is_sms_login_challenge_required(7));
+  }
+
+  public function testSmsLoginChallengeIsSuppressedWhenPlgManagesUser(): void
+  {
+    $GLOBALS['tf_test_fetch_row_result'] = array(1);
+    $GLOBALS['tf_test_plg_is_eligible'][7] = true;
+    $GLOBALS['tf_test_plg_records'][7] = array(
+      'status' => 'verified',
+    );
+
+    $this->assertFalse(tf_is_sms_login_challenge_required(7));
+  }
+
   public function testAlbumOwnerRequirementIgnoresOwnedAlbumsWithoutImages(): void
   {
     $GLOBALS['tf_test_owned_albums'][7] = array(
@@ -334,6 +393,34 @@ class SmsHelpersTest extends TestCase
 
     $this->assertTrue(tf_is_album_owner_two_factor_required(7));
     $this->assertStringContainsString('category_id IN (1022,1023)', (string) $GLOBALS['tf_test_last_query']);
+  }
+
+  public function testAlbumOwnerRequirementIsSuppressedWhenPlgManagesUser(): void
+  {
+    $GLOBALS['tf_test_owned_albums'][7] = array(
+      array('id' => 1022),
+    );
+    $GLOBALS['tf_test_image_membership_count'] = 1;
+    $GLOBALS['tf_test_plg_is_eligible'][7] = true;
+    $GLOBALS['tf_test_plg_records'][7] = array(
+      'status' => 'verified',
+    );
+
+    $this->assertFalse(tf_is_album_owner_two_factor_required(7));
+  }
+
+  public function testAlbumOwnerRequirementStillAppliesBeforePlgVerificationCompletes(): void
+  {
+    $GLOBALS['tf_test_owned_albums'][7] = array(
+      array('id' => 1022),
+    );
+    $GLOBALS['tf_test_image_membership_count'] = 1;
+    $GLOBALS['tf_test_plg_is_eligible'][7] = true;
+    $GLOBALS['tf_test_plg_records'][7] = array(
+      'status' => 'not_started',
+    );
+
+    $this->assertTrue(tf_is_album_owner_two_factor_required(7));
   }
 
   public function testAlbumOwnerPolicyRequiresSetupWithoutEnabledMethod(): void
@@ -378,6 +465,28 @@ class SmsHelpersTest extends TestCase
     $this->assertFalse($policy['required']);
     $this->assertFalse($policy['has_enabled']);
     $this->assertSame(array(array(7, 'email'), array(7, 'sms')), PwgTwoFactor::$deleted_methods);
+    $this->assertArrayNotHasKey(TF_SESSION_SETUP_REQUIRED, $_SESSION);
+  }
+
+  public function testAlbumOwnerPolicyDoesNotDeleteMethodsWhenPlgManagesUser(): void
+  {
+    $GLOBALS['tf_test_owned_albums'][7] = array(
+      array('id' => 1022),
+    );
+    $GLOBALS['tf_test_image_membership_count'] = 1;
+    $GLOBALS['tf_test_plg_is_eligible'][7] = true;
+    $GLOBALS['tf_test_plg_records'][7] = array(
+      'status' => 'verified',
+    );
+    PwgTwoFactor::$enabled_methods[7] = array('email');
+    $_SESSION[TF_SESSION_SETUP_REQUIRED] = 7;
+
+    $policy = tf_sync_album_owner_two_factor_policy(7);
+
+    $this->assertFalse($policy['required']);
+    $this->assertTrue($policy['has_enabled']);
+    $this->assertFalse($policy['requires_setup']);
+    $this->assertSame(array(), PwgTwoFactor::$deleted_methods);
     $this->assertArrayNotHasKey(TF_SESSION_SETUP_REQUIRED, $_SESSION);
   }
 

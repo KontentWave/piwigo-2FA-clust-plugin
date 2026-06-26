@@ -26,6 +26,8 @@ The implemented extension uses these decisions:
 7. Album owners with images and without any configured 2FA method are redirected to Profile setup after login.
 8. Album owners with images may disable an individual method only if at least one other 2FA method remains enabled.
 9. When a non-admin user no longer owns any album with images, the plugin removes their stored 2FA methods on a later authenticated request.
+10. For SMS, the verified-phone record and login-challenge enrollment are treated separately: the `sms` row stores the trusted verified phone, while `enabled_at IS NOT NULL` means native SMS login challenge is enrolled.
+11. When PLG already manages an eligible owner through a persisted liveness record, native `two_factor` owner-policy setup enforcement and native SMS login challenge are suppressed for that user.
 
 ## Consequences
 
@@ -35,12 +37,13 @@ Positive:
 - Login and later PLG-style flows continue to rely only on verified phone numbers.
 - Users receive explicit stale-phone feedback when CPT and verified SMS state diverge.
 - The album-owner requirement is enforced in both client and server behavior.
+- PLG can reuse the verified-phone foundation without having to delete the `sms` row just to stop native login-time SMS.
 
 Tradeoffs:
 
 - The current re-verification UX still uses the normal SMS setup path rather than a dedicated "verify updated phone" flow.
 - Automatic removal of stored 2FA methods when image-bearing ownership ends is policy-heavy and may need revisiting if requirements soften.
-- PLG-facing helper abstractions remain separate follow-up work.
+- Cross-plugin behavior now depends on runtime visibility of PLG helper functions and persisted PLG record state during login.
 
 ## Validation
 

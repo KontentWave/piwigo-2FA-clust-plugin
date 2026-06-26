@@ -89,7 +89,7 @@ function tf_try_log_user($success, $username, $password, $remember_me)
   // check if these methods is activated (config) and enabled (user setup)
   $has_external_app = PwgTwoFactor::isActivated('external_app') && PwgTwoFactor::isEnabled($user['id'], 'external_app');
   $has_email = PwgTwoFactor::isActivated('email') && PwgTwoFactor::isEnabled($user['id'], 'email');
-  $has_sms = PwgTwoFactor::isActivated('sms') && PwgTwoFactor::isEnabled($user['id'], 'sms');
+  $has_sms = PwgTwoFactor::isActivated('sms') && tf_is_sms_login_challenge_required($user['id']);
   if (tf_is_album_owner_two_factor_required((int) $user['id']) && !$has_external_app && !$has_email && !$has_sms)
   {
     $_SESSION[TF_SESSION_SETUP_REQUIRED] = (int) $user['id'];
@@ -240,7 +240,7 @@ function tf_loc_end_identification()
     $template->assign(array(
       'TF_STATUS_EXTERNAL_APP' => PwgTwoFactor::isActivated('external_app') && PwgTwoFactor::isEnabled($user['id'], 'external_app'),
       'TF_STATUS_EMAIL' => PwgTwoFactor::isActivated('email') && PwgTwoFactor::isEnabled($user['id'], 'email'),
-      'TF_STATUS_SMS' => PwgTwoFactor::isActivated('sms') && PwgTwoFactor::isEnabled($user['id'], 'sms'),
+      'TF_STATUS_SMS' => PwgTwoFactor::isActivated('sms') && tf_is_sms_login_challenge_required($user['id']),
       'TF_SMS_RESEND_DELAY' => tf_get_sms_resend_delay(),
       'F_ACTION' => 'identification.php?tf',
       'TF_LOGOUT' => get_root_url().'?act=logout',

@@ -104,6 +104,11 @@ WHERE user_id = '.$user_id.'
    */
   public static function isEnabled($user_id, $method = null)
   {
+    if ('sms' === $method && function_exists('tf_is_sms_login_enrollment_enabled'))
+    {
+      return tf_is_sms_login_enrollment_enabled($user_id);
+    }
+
     $query = '
 SELECT COUNT(*)
   FROM ' . TF_TABLE . '
@@ -111,6 +116,8 @@ WHERE user_id = ' . pwg_db_real_escape_string($user_id) . '
 ';
     if ($method && self::isAllowedMethod($method)) {
       $query .= ' AND method = \'' . pwg_db_real_escape_string($method) . '\'';
+    } else {
+      $query .= ' AND (method != \'sms\' OR enabled_at IS NOT NULL)';
     }
     $query .= ';';
 
@@ -372,7 +379,8 @@ INSERT INTO '.TF_TABLE.' (user_id, secret, method, phone_number, recovery_codes,
   ON DUPLICATE KEY UPDATE 
     secret = \''.$curr_secret.'\',
     phone_number = '.$phone_number_sql.',
-    recovery_codes = '.$recovery_codes_sql.'
+    recovery_codes = '.$recovery_codes_sql.',
+    enabled_at = NOW()
 ';
     pwg_query($query);
   }

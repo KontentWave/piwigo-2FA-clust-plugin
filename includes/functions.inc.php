@@ -470,6 +470,46 @@ WHERE category_id IN ('.implode(',', $album_ids).')
 }
 
 /**
+ * `Two Factor` : whether PLG is already managing periodic verification for this user
+ */
+function tf_is_profile_liveness_guard_managing_user($user_id)
+{
+  $user_id = (int) $user_id;
+  if ($user_id <= 0)
+  {
+    return false;
+  }
+
+  if (!function_exists('profile_liveness_guard_get_record') || !function_exists('profile_liveness_guard_is_eligible_user'))
+  {
+    $functions_file = PHPWG_ROOT_PATH . 'plugins/profile_liveness_guard/include/functions.inc.php';
+    if (defined('PROFILE_LIVENESS_GUARD_PATH') && file_exists($functions_file))
+    {
+      include_once($functions_file);
+    }
+  }
+
+  if (!function_exists('profile_liveness_guard_get_record') || !function_exists('profile_liveness_guard_is_eligible_user'))
+  {
+    return false;
+  }
+
+  if (!profile_liveness_guard_is_eligible_user($user_id))
+  {
+    return false;
+  }
+
+  $record = profile_liveness_guard_get_record($user_id);
+  if (!is_array($record))
+  {
+    return false;
+  }
+
+  $status = (string) ($record['status'] ?? '');
+  return in_array($status, array('verified', 'sms_sent', 'albums_privatized', 'awaiting_admin_restore'), true);
+}
+
+/**
  * `Two Factor` : whether album ownership makes 2FA mandatory for this user
  */
 function tf_is_album_owner_two_factor_required($user_id)
@@ -481,6 +521,11 @@ function tf_is_album_owner_two_factor_required($user_id)
   }
 
   if (!function_exists('cpt_fetch_albums_owned_by'))
+  {
+    return false;
+  }
+
+  if (tf_is_profile_liveness_guard_managing_user($user_id))
   {
     return false;
   }
@@ -542,13 +587,14 @@ function tf_delete_all_user_two_factor_methods($user_id)
 function tf_sync_album_owner_two_factor_policy($user_id)
 {
   $user_id = (int) $user_id;
+  $managed_by_plg = tf_is_profile_liveness_guard_managing_user($user_id);
   $required = tf_is_album_owner_two_factor_required($user_id);
   $has_enabled = $user_id > 0 ? tf_user_has_enabled_two_factor($user_id) : false;
 
   if (!$required)
   {
     unset($_SESSION[TF_SESSION_SETUP_REQUIRED]);
-    if ($has_enabled && !tf_is_two_factor_policy_exempt_user($user_id))
+    if (!$managed_by_plg && $has_enabled && !tf_is_two_factor_policy_exempt_user($user_id))
     {
       tf_delete_all_user_two_factor_methods($user_id);
       $has_enabled = false;
@@ -735,6 +781,84 @@ LIMIT 1
   }
 
   return (string) $result['phone_number'];
+}
+
+/**
+ * `Two Factor` : whether SMS login enrollment is enabled for a user
+ */
+function tf_is_sms_login_enrollment_enabled($user_id)
+{
+  $user_id = (int) $user_id;
+  if ($user_id <= 0)
+  {
+    return false;
+  }
+
+  if (function_exists('pwg_db_num_rows'))
+  {
+    tf_ensure_sms_schema();
+  }
+
+  list($count) = pwg_db_fetch_row(pwg_query('
+SELECT COUNT(*)
+  FROM '.TF_TABLE.'
+WHERE user_id = '.pwg_db_real_escape_string($user_id).'
+  AND method = \'sms\'
+  AND enabled_at IS NOT NULL
+;'));
+
+  return (int) $count > 0;
+}
+
+/**
+ * `Two Factor` : whether login-time SMS challenge should be enforced for a user
+ */
+function tf_is_sms_login_challenge_required($user_id)
+{
+  $user_id = (int) $user_id;
+  if ($user_id <= 0)
+  {
+    return false;
+  }
+
+  if (!tf_is_sms_login_enrollment_enabled($user_id))
+  {
+    return false;
+  }
+
+  return !tf_is_profile_liveness_guard_managing_user($user_id);
+}
+
+/**
+ * `Two Factor` : disable SMS login enrollment but keep verified phone storage
+ */
+function tf_disable_sms_login_enrollment($user_id)
+{
+  $user_id = (int) $user_id;
+  if ($user_id <= 0)
+  {
+    return false;
+  }
+
+  if (function_exists('pwg_db_num_rows'))
+  {
+    tf_ensure_sms_schema();
+  }
+
+  $result = pwg_query('
+UPDATE '.TF_TABLE.'
+  SET enabled_at = NULL
+WHERE user_id = '.pwg_db_real_escape_string($user_id).'
+  AND method = \'sms\'
+  AND enabled_at IS NOT NULL
+;');
+
+  if (false === $result)
+  {
+    return false;
+  }
+
+  return !tf_is_sms_login_enrollment_enabled($user_id);
 }
 
 /**
