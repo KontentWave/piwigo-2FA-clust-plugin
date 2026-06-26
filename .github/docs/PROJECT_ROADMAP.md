@@ -65,9 +65,9 @@ Implemented extension after Phase 1:
 - SMS setup now reads the candidate phone from CPT `contact_number` by default.
 - Manual phone-entry fields were removed from the 2FA block.
 - The profile UI shows masked verified-vs-current CPT phone warnings when re-verification is needed and refreshes that display after successful SMS verification.
-- Non-admin album owners are redirected to profile setup when they own albums but have no configured 2FA method.
-- Non-admin album owners cannot disable their last remaining 2FA method while they still own albums.
-- Once a non-admin user no longer owns albums, the plugin removes their stored 2FA methods on a later authenticated request.
+- Non-admin album owners are redirected to profile setup when they own at least one owned album with images but have no configured 2FA method.
+- Non-admin album owners cannot disable their last remaining 2FA method while they still own at least one album with images.
+- Once a non-admin user no longer owns any owned album with images, the plugin removes their stored 2FA methods on a later authenticated request.
 
 ### Non-goals
 

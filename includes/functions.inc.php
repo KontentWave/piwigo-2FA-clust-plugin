@@ -423,6 +423,53 @@ function tf_is_two_factor_policy_exempt_user($user_id)
 }
 
 /**
+ * `Two Factor` : whether any owned album currently contains images
+ */
+function tf_user_owns_albums_with_images($user_id)
+{
+  $user_id = (int) $user_id;
+  if ($user_id <= 0 || !function_exists('cpt_fetch_albums_owned_by'))
+  {
+    return false;
+  }
+
+  $owned_albums = cpt_fetch_albums_owned_by($user_id);
+  if (empty($owned_albums) || !function_exists('pwg_query') || !function_exists('pwg_db_fetch_row'))
+  {
+    return false;
+  }
+
+  $album_ids = array();
+  foreach ($owned_albums as $album)
+  {
+    $album_id = (int) ($album['id'] ?? 0);
+    if ($album_id > 0)
+    {
+      $album_ids[$album_id] = $album_id;
+    }
+  }
+
+  if (empty($album_ids))
+  {
+    return false;
+  }
+
+  $query = '
+SELECT COUNT(*)
+  FROM '.IMAGE_CATEGORY_TABLE.'
+WHERE category_id IN ('.implode(',', $album_ids).')
+;';
+  $result = pwg_query($query);
+  if (!$result)
+  {
+    return false;
+  }
+
+  list($count) = pwg_db_fetch_row($result);
+  return (int) $count > 0;
+}
+
+/**
  * `Two Factor` : whether album ownership makes 2FA mandatory for this user
  */
 function tf_is_album_owner_two_factor_required($user_id)
@@ -433,12 +480,12 @@ function tf_is_album_owner_two_factor_required($user_id)
     return false;
   }
 
-  if (!function_exists('cpt_count_albums_owned_by'))
+  if (!function_exists('cpt_fetch_albums_owned_by'))
   {
     return false;
   }
 
-  return cpt_count_albums_owned_by($user_id) > 0;
+  return tf_user_owns_albums_with_images($user_id);
 }
 
 /**

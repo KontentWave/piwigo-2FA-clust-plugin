@@ -550,8 +550,8 @@ Add an explicit "Verify updated profile phone" flow without using deactivate/rea
 An additional business rule is now enforced for non-admin album owners:
 
 ```text
-- if a non-admin user owns albums, 2FA is required
-- if they do not own albums anymore, their configured 2FA methods are removed automatically
+- if a non-admin user owns at least one album that contains images, 2FA is required
+- if they no longer own any album that contains images, their configured 2FA methods are removed automatically
 - admins and webmasters are exempt from this policy
 ```
 
@@ -559,10 +559,10 @@ Implemented behavior:
 
 ```text
 1. CPT ownership count is used as the policy input.
-2. If the owner has albums but no configured 2FA method, the plugin redirects them to Profile until they set one up.
+2. If the owner has at least one owned album with images but no configured 2FA method, the plugin redirects them to Profile until they set one up.
 3. If the owner already has multiple methods, they may disable one method as long as at least one method remains enabled.
 4. If they try to disable their last enabled method while still owning albums, the request is rejected in both UI and server-side WS handling.
-5. If ownership drops to zero albums, the plugin removes the stored 2FA methods for that non-admin user on the next authenticated request.
+5. If ownership drops to zero owned albums with images, the plugin removes the stored 2FA methods for that non-admin user on the next authenticated request.
 ```
 
 ---
@@ -856,7 +856,7 @@ If `TF_SMS_PROFILE_PHONE_AVAILABLE` is false:
 - Do not use `contact_phone`, `contact_sms`, or `contact_whatsapp` as phone numbers.
 - Do not send PLG/liveness SMS to an unverified CPT value.
 - Do not silently overwrite the verified Two Factor phone when CPT profile phone changes.
-- Do not allow a non-admin album owner to disable their last enabled 2FA method.
+- Do not allow a non-admin album owner with images to disable their last enabled 2FA method.
 - Keep API key server-only.
 - Log phone values only masked.
 - Reject malformed phone values before calling SMSTOOLS.
@@ -889,8 +889,8 @@ If `TF_SMS_PROFILE_PHONE_AVAILABLE` is false:
 5. Owner changes CPT contact number and 2FA shows that SMS verification needs to be refreshed.
 6. Owner completes SMS verification and the masked verified-phone display updates without a page reload.
 7. Crafted request with a different phone number is rejected server-side.
-8. Album owner cannot disable their last remaining 2FA method.
-9. Album owner with no configured 2FA method is redirected to Profile setup after login.
+8. Album owner with images cannot disable their last remaining 2FA method.
+9. Album owner with images and no configured 2FA method is redirected to Profile setup after login.
 
 ---
 
@@ -903,6 +903,6 @@ If `TF_SMS_PROFILE_PHONE_AVAILABLE` is false:
 - PLG continues to use the verified Two Factor phone for liveness checks.
 - CPT channel flags are interpreted as flags only, not as phone-number values.
 - Missing or invalid CPT phone fails closed with a clear owner-facing message.
-- Non-admin album owners must keep at least one 2FA method enabled while they own albums.
+- Non-admin album owners must keep at least one 2FA method enabled while they own at least one album with images.
 - Album-owner policy is enforced in both the profile UI and the deactivation WS handler.
 - Tests cover successful setup, missing phone, mismatched phone, stale verified phone, flag interpretation, and album-owner policy helpers.

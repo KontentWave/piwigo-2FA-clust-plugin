@@ -21,6 +21,7 @@ if (!defined('TF_SESSION_SMS_SETUP_RATE_LIMIT')) define('TF_SESSION_SMS_SETUP_RA
 if (!defined('TF_SESSION_SMS_VERIFY_RATE_LIMIT')) define('TF_SESSION_SMS_VERIFY_RATE_LIMIT', 'tf_sms_verify_rate_limit');
 if (!defined('TF_SESSION_SETUP_REQUIRED')) define('TF_SESSION_SETUP_REQUIRED', 'tf_setup_required');
 if (!defined('TF_TABLE')) define('TF_TABLE', 'piwigo_two_factor');
+if (!defined('IMAGE_CATEGORY_TABLE')) define('IMAGE_CATEGORY_TABLE', 'piwigo_image_category');
 if (!defined('USER_INFOS_TABLE')) define('USER_INFOS_TABLE', 'piwigo_user_infos');
 
 if (!function_exists('l10n'))

@@ -54,6 +54,28 @@ if (!function_exists('cpt_count_albums_owned_by')) {
   }
 }
 
+if (!function_exists('cpt_fetch_albums_owned_by')) {
+  function cpt_fetch_albums_owned_by($user_id)
+  {
+    return $GLOBALS['tf_test_owned_albums'][$user_id] ?? array();
+  }
+}
+
+if (!function_exists('pwg_query')) {
+  function pwg_query($query)
+  {
+    $GLOBALS['tf_test_last_query'] = $query;
+    return $query;
+  }
+}
+
+if (!function_exists('pwg_db_fetch_row')) {
+  function pwg_db_fetch_row($result)
+  {
+    return array($GLOBALS['tf_test_image_membership_count'] ?? 0);
+  }
+}
+
 if (!function_exists('is_webmaster')) {
   function is_webmaster()
   {
@@ -86,6 +108,9 @@ class SmsHelpersTest extends TestCase
     PwgTwoFactor::$enabled_methods = array();
     PwgTwoFactor::$deleted_methods = array();
     $GLOBALS['tf_test_owned_album_count'] = array();
+    $GLOBALS['tf_test_owned_albums'] = array();
+    $GLOBALS['tf_test_image_membership_count'] = 0;
+    $GLOBALS['tf_test_last_query'] = null;
     $GLOBALS['tf_test_is_webmaster'] = false;
     $GLOBALS['tf_test_is_admin'] = false;
   }
@@ -255,9 +280,34 @@ class SmsHelpersTest extends TestCase
     $this->assertSame(2, tf_count_enabled_two_factor_methods(7));
   }
 
+  public function testAlbumOwnerRequirementIgnoresOwnedAlbumsWithoutImages(): void
+  {
+    $GLOBALS['tf_test_owned_albums'][7] = array(
+      array('id' => 1022),
+    );
+    $GLOBALS['tf_test_image_membership_count'] = 0;
+
+    $this->assertFalse(tf_is_album_owner_two_factor_required(7));
+  }
+
+  public function testAlbumOwnerRequirementAppliesWhenOwnedAlbumsContainImages(): void
+  {
+    $GLOBALS['tf_test_owned_albums'][7] = array(
+      array('id' => 1022),
+      array('id' => 1023),
+    );
+    $GLOBALS['tf_test_image_membership_count'] = 3;
+
+    $this->assertTrue(tf_is_album_owner_two_factor_required(7));
+    $this->assertStringContainsString('category_id IN (1022,1023)', (string) $GLOBALS['tf_test_last_query']);
+  }
+
   public function testAlbumOwnerPolicyRequiresSetupWithoutEnabledMethod(): void
   {
-    $GLOBALS['tf_test_owned_album_count'][7] = 2;
+    $GLOBALS['tf_test_owned_albums'][7] = array(
+      array('id' => 1022),
+    );
+    $GLOBALS['tf_test_image_membership_count'] = 1;
 
     $policy = tf_sync_album_owner_two_factor_policy(7);
 
@@ -268,7 +318,10 @@ class SmsHelpersTest extends TestCase
 
   public function testAlbumOwnerPolicyClearsSetupFlagWhenMethodEnabled(): void
   {
-    $GLOBALS['tf_test_owned_album_count'][7] = 1;
+    $GLOBALS['tf_test_owned_albums'][7] = array(
+      array('id' => 1022),
+    );
+    $GLOBALS['tf_test_image_membership_count'] = 1;
     PwgTwoFactor::$enabled_methods[7] = array('sms');
     $_SESSION[TF_SESSION_SETUP_REQUIRED] = 7;
 
@@ -281,7 +334,8 @@ class SmsHelpersTest extends TestCase
 
   public function testAlbumOwnerPolicyDeletesMethodsAfterAlbumOwnershipEnds(): void
   {
-    $GLOBALS['tf_test_owned_album_count'][7] = 0;
+    $GLOBALS['tf_test_owned_albums'][7] = array();
+    $GLOBALS['tf_test_image_membership_count'] = 0;
     PwgTwoFactor::$enabled_methods[7] = array('email', 'sms');
     $_SESSION[TF_SESSION_SETUP_REQUIRED] = 7;
 
@@ -298,7 +352,10 @@ class SmsHelpersTest extends TestCase
     global $user;
 
     $user['id'] = 7;
-    $GLOBALS['tf_test_owned_album_count'][7] = 3;
+    $GLOBALS['tf_test_owned_albums'][7] = array(
+      array('id' => 1022),
+    );
+    $GLOBALS['tf_test_image_membership_count'] = 1;
     $GLOBALS['tf_test_is_admin'] = true;
     PwgTwoFactor::$enabled_methods[7] = array('email');
 
